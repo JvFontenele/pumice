@@ -1,0 +1,15 @@
+{
+  "name": "@pumice/adapters",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@pumice/types": "*",
+    "@pumice/agent-sdk": "*"
+  }
+}
