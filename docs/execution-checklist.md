@@ -5,10 +5,11 @@ Checklist operacional para executar o roadmap em ciclos semanais, com foco em en
 ## Status atual
 
 1. `S0 - Foundation`: concluida com gate `PASS`
-2. `S3 - Fluxos Dinamicos`: entregue no backend
-3. `S4 - Multi-provider Robusto`: entregue no backend/adapters
-4. `S1 - Operacao Multiagente Minima`: parcial, com UI operacional ainda pendente
-5. Proxima sprint recomendada: `S2 - Context Engine + Obsidian`
+2. `S2 - Context Engine + Obsidian`: entregue
+3. `S3 - Fluxos Dinamicos`: entregue no backend
+4. `S4 - Multi-provider Robusto`: entregue no backend/adapters
+5. `S1 - Operacao Multiagente Minima`: parcial, com UI operacional ainda pendente
+6. Proxima sprint recomendada: `S5 - Hardening e Produto`
 
 ## Como usar
 
@@ -108,9 +109,9 @@ Checklist operacional para executar o roadmap em ciclos semanais, com foco em en
 
 ### Integracao com vault
 
-- [ ] Configurar `vaultPath` por projeto.
-- [ ] Implementar indexacao de notas relevantes.
-- [ ] Criar estrutura padrao no vault:
+- [x] Configurar `vaultPath` por projeto.
+- [x] Implementar indexacao de notas relevantes.
+- [x] Criar estrutura padrao no vault:
   - `00-project/`
   - `01-rules/`
   - `02-decisions/`
@@ -119,35 +120,44 @@ Checklist operacional para executar o roadmap em ciclos semanais, com foco em en
 
 ### Context composer
 
-- [ ] Implementar merge de contexto por prioridade:
+- [x] Implementar merge de contexto por prioridade:
   - runtime
   - vault
   - input manual
-- [ ] Implementar controle de tamanho de contexto.
-- [ ] Implementar sumarizacao automatica ao exceder limite.
-- [ ] Garantir reproducibilidade do contexto para o mesmo run.
+- [x] Implementar controle de tamanho de contexto.
+- [x] Implementar sumarizacao automatica ao exceder limite.
+- [x] Garantir reproducibilidade do contexto para o mesmo run.
 
 ### Persistencia de memoria
 
-- [ ] Salvar handoff apos cada resposta final.
-- [ ] Salvar devlog com resumo acionavel por comando.
+- [x] Salvar handoff apos cada resposta final.
+- [x] Salvar devlog com resumo acionavel por comando.
 - [ ] Incluir referencias cruzadas para decisoes relevantes.
 
 ### UI de contexto
 
-- [ ] Exibir fontes de contexto utilizadas.
-- [ ] Exibir preview do contexto final antes do envio ao agente.
+- [x] Exibir fontes de contexto utilizadas.
+- [x] Exibir preview do contexto final antes do envio ao agente.
 
 ### Testes
 
-- [ ] Teste de reproducibilidade do contexto.
-- [ ] Teste de qualidade de handoff (conteudo minimo obrigatorio).
-- [ ] Teste de leitura de regras/decisoes pelo agente.
+- [x] Teste de reproducibilidade do contexto.
+- [x] Teste de qualidade de handoff (conteudo minimo obrigatorio).
+- [x] Teste de leitura de regras/decisoes pelo agente.
 
 ### Gate de encerramento
 
-- [ ] Agente recebe contexto composto e cita regras/decisoes corretas.
-- [ ] Handoff/devlog persistidos automaticamente no vault.
+- [x] Agente recebe contexto composto e cita regras/decisoes corretas.
+- [x] Handoff/devlog persistidos automaticamente no vault.
+
+Resultado registrado:
+
+1. `indexVault` entregue com leitura recursiva de `.md`, tags de frontmatter YAML e reindexacao idempotente.
+2. `composeContext` entregue com prioridade `manual > vault > runtime` e truncamento por orcamento de tokens.
+3. `writeHandoff` entregue em `vault/04-handoffs/<timestamp>.md`.
+4. `appendDevlog` entregue em `vault/03-devlog/<YYYY-MM-DD>.md`.
+5. API `/context/*` entregue.
+6. `ContextPage` entregue com `vaultPath`, indexacao, blocos manuais, agrupamento e preview.
 
 ## Semana 4 - Fluxos Dinamicos (Sprint 3)
 

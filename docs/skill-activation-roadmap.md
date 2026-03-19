@@ -5,21 +5,22 @@ Este documento define quando ativar cada skill e o que deve ser feito em cada sp
 ## Status atual
 
 1. Sprint concluida: `S0 - Foundation`
-2. Sprint entregue: `S3 - Fluxos Dinamicos`
-3. Sprint entregue: `S4 - Multi-provider Robusto`
-4. Sprint 1 segue parcial: backend principal entregue, UI operacional ainda pendente
-5. Proxima sprint recomendada: `S2 - Context Engine + Obsidian`
+2. Sprint entregue: `S2 - Context Engine + Obsidian`
+3. Sprint entregue: `S3 - Fluxos Dinamicos`
+4. Sprint entregue: `S4 - Multi-provider Robusto`
+5. Sprint 1 segue parcial: UI operacional geral ainda pendente
+6. Proxima sprint recomendada: `S5 - Hardening e Produto`
 
 ## Recomendacao de sequencia
 
-1. Seguir para `S2 - Context Engine + Obsidian`.
-2. Deixar `S5 - Hardening e Produto` para depois de fechar contexto e UX operacional principal.
+1. Seguir para `S5 - Hardening e Produto`.
+2. Fechar a UI operacional pendente da Sprint 1 em paralelo ou na sequencia curta.
 
 Motivo:
 
-1. O Pumice ja tem foundation, flow engine e adapters multi-provider.
-2. O maior gap de produto agora e contexto persistente e composicao de memoria.
-3. Hardening antes de contexto estabiliza uma plataforma ainda incompleta no que e mais diferenciador.
+1. O Pumice ja tem foundation, context engine, flow engine e adapters multi-provider.
+2. O risco principal agora e operacional: permissao por workspace, observabilidade, regressao E2E e run reports.
+3. A UI ja tem base concreta em `apps/web`, entao o maior retorno tecnico imediato e endurecer a plataforma.
 
 ## Como usar este roteiro
 
@@ -124,6 +125,18 @@ Compor contexto compartilhado com memoria runtime e vault Obsidian.
 1. Contexto final reproduzivel no mesmo run.
 2. Agente consegue citar regras e decisoes do vault.
 3. Handoffs/devlogs salvos automaticamente.
+
+### Status
+
+1. Entregue.
+2. Evidencias:
+   - `indexVault`
+   - `composeContext`
+   - `writeHandoff`
+   - `appendDevlog`
+   - API `/context/*`
+   - `ContextPage`
+3. Fluxo operacional reportado: apontar vault, indexar, adicionar blocos, compor, ver contagem de tokens e salvar handoff.
 
 ## Sprint 3 - Fluxos Dinamicos
 
