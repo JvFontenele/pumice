@@ -18,6 +18,12 @@ export function createDb(dbPath?: string): Database.Database {
       last_seen   TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS agent_tokens (
+      agent_id     TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+      token        TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS flows (
       id      TEXT PRIMARY KEY,
       name    TEXT NOT NULL,
@@ -42,6 +48,15 @@ export function createDb(dbPath?: string): Database.Database {
       status  TEXT NOT NULL DEFAULT 'queued'
     );
 
+    CREATE TABLE IF NOT EXISTS command_deliveries (
+      command_id    TEXT NOT NULL REFERENCES commands(id) ON DELETE CASCADE,
+      agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      status        TEXT NOT NULL DEFAULT 'queued',
+      delivered_at  TEXT,
+      completed_at  TEXT,
+      PRIMARY KEY (command_id, agent_id)
+    );
+
     CREATE TABLE IF NOT EXISTS responses (
       id          TEXT PRIMARY KEY,
       command_id  TEXT NOT NULL REFERENCES commands(id),
@@ -49,6 +64,19 @@ export function createDb(dbPath?: string): Database.Database {
       output      TEXT NOT NULL,
       artifacts   TEXT NOT NULL DEFAULT '[]',
       partial     INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS run_steps (
+      id           TEXT PRIMARY KEY,
+      run_id       TEXT NOT NULL REFERENCES runs(id),
+      step_id      TEXT NOT NULL,
+      attempt      INTEGER NOT NULL DEFAULT 1,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      command_id   TEXT REFERENCES commands(id),
+      started_at   TEXT,
+      completed_at TEXT,
+      error        TEXT,
+      UNIQUE(run_id, step_id)
     );
 
     CREATE TABLE IF NOT EXISTS context_blocks (
