@@ -18,6 +18,12 @@ export function createDb(dbPath?: string): Database.Database {
       last_seen   TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS agent_tokens (
+      agent_id     TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+      token        TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS flows (
       id      TEXT PRIMARY KEY,
       name    TEXT NOT NULL,
@@ -40,6 +46,15 @@ export function createDb(dbPath?: string): Database.Database {
       target  TEXT NOT NULL,
       payload TEXT NOT NULL,
       status  TEXT NOT NULL DEFAULT 'queued'
+    );
+
+    CREATE TABLE IF NOT EXISTS command_deliveries (
+      command_id    TEXT NOT NULL REFERENCES commands(id) ON DELETE CASCADE,
+      agent_id      TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      status        TEXT NOT NULL DEFAULT 'queued',
+      delivered_at  TEXT,
+      completed_at  TEXT,
+      PRIMARY KEY (command_id, agent_id)
     );
 
     CREATE TABLE IF NOT EXISTS responses (

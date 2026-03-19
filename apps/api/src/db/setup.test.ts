@@ -21,9 +21,11 @@ describe('createDb', () => {
       .map((r: any) => r.name)
 
     expect(tables).toContain('agents')
+    expect(tables).toContain('agent_tokens')
     expect(tables).toContain('flows')
     expect(tables).toContain('runs')
     expect(tables).toContain('commands')
+    expect(tables).toContain('command_deliveries')
     expect(tables).toContain('responses')
     expect(tables).toContain('context_blocks')
   })

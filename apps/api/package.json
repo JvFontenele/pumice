@@ -5,9 +5,11 @@
   "main": "./src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@pumice/agent-sdk": "*",
     "@pumice/types": "*",
     "fastify": "^5.0.0",
     "better-sqlite3": "^11.0.0"

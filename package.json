@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:api": "tsx watch apps/api/src/index.ts",
-    "typecheck": "tsc --build --noEmit"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

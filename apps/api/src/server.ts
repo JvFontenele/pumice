@@ -1,7 +1,10 @@
 import Fastify from 'fastify'
 import type Database from 'better-sqlite3'
+import { agentRoutes } from './routes/agents'
+import { commandRoutes } from './routes/commands'
 import { healthRoutes } from './routes/health'
 import { eventsRoutes } from './routes/events'
+import { responseRoutes } from './routes/responses'
 
 export interface ServerOptions {
   db: Database.Database
@@ -16,6 +19,9 @@ export function buildServer(opts: ServerOptions) {
 
   app.register(healthRoutes)
   app.register(eventsRoutes)
+  app.register(agentRoutes)
+  app.register(commandRoutes)
+  app.register(responseRoutes)
 
   return app
 }
