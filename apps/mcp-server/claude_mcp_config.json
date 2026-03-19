@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pumice": {
+      "command": "npx",
+      "args": ["tsx", "C:\\Users\\joao\\Documents\\projetos\\pumice\\apps\\mcp-server\\src\\index.ts"],
+      "env": {
+        "PUMICE_API_URL": "http://localhost:3001"
+      }
+    }
+  }
+}
