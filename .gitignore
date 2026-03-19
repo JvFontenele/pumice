@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+
+workspace/tasks/*.md
+workspace/outputs/*.md
+workspace/final-review.md
+
+obsidian-vault/20*.md
