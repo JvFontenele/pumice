@@ -14,9 +14,7 @@ export interface AgentCardModel {
   name: string;
   role: AgentRole;
   provider: AgentProvider;
-  /** The CLI command to invoke, e.g. "claude", "codex", "ollama" */
   command: string;
-  /** Model identifier passed to the agent, e.g. "claude-opus-4-6", "qwen3.5" */
   model: string;
   goal: string;
 }
@@ -37,4 +35,21 @@ export interface ProjectConfig {
   mission: string;
   obsidianVaultPath: string;
   agents: AgentCardModel[];
+}
+
+/** An agent that self-registered with the MCP hub. */
+export interface ConnectedAgent {
+  id: string;
+  name: string;
+  role?: string;
+  capabilities?: string[];
+  connectedAt: string;
+  lastSeen: string;
+}
+
+/** A note discovered inside the Obsidian vault. */
+export interface VaultNote {
+  path: string;
+  relativePath: string;
+  title: string;
 }

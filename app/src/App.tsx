@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   FolderOpen,
   Users,
   Play,
+  Bot,
+  Send,
   Settings,
   CheckCircle,
   XCircle,
@@ -16,12 +18,17 @@ import {
   BookOpen,
   FileText,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   TerminalSquare,
   ToggleLeft,
   ToggleRight,
   RefreshCw,
   Wifi,
   WifiOff,
+  Server,
+  Network,
+  Square,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -65,6 +72,7 @@ import {
 } from "@/lib/tauri";
 import type {
   AgentCardModel,
+  ConnectedAgent,
   AgentProvider,
   AgentRole,
   ProjectSnapshot,
@@ -125,46 +133,9 @@ const ROLE_ACCENT: Record<AgentRole, string> = {
   docs: "border-cyan-400/25 bg-cyan-400/5",
 };
 
-const DEFAULT_AGENTS: AgentCardModel[] = [
-  {
-    id: "agent-architect",
-    name: "Lead Architect",
-    role: "architect",
-    provider: "native",
-    command: "claude",
-    model: "claude-opus-4-6",
-    goal: "Design architecture and technical decisions",
-  },
-  {
-    id: "agent-backend",
-    name: "Code Builder",
-    role: "backend",
-    provider: "native",
-    command: "codex",
-    model: "gpt-oss:20b",
-    goal: "Implement backend logic and APIs",
-  },
-  {
-    id: "agent-qa",
-    name: "QA Sentinel",
-    role: "qa",
-    provider: "ollama",
-    command: "claude",
-    model: "qwen3.5",
-    goal: "Validate implementations and write tests",
-  },
-  {
-    id: "agent-docs",
-    name: "Vault Scribe",
-    role: "docs",
-    provider: "ollama",
-    command: "ollama",
-    model: "qwen3.5",
-    goal: "Document decisions and maintain memory",
-  },
-];
+const DEFAULT_AGENTS: AgentCardModel[] = [];
 
-type View = "project" | "team" | "execute";
+type View = "project" | "team" | "agents" | "execute";
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
 
@@ -601,14 +572,7 @@ interface TeamViewProps {
 function TeamView({ agents, setAgents }: TeamViewProps) {
   const [statuses, setStatuses] = useState<Record<string, RuntimeStatus>>({});
   const [editingAgent, setEditingAgent] = useState<AgentCardModel | null>(null);
-  const [editingRole, setEditingRole] = useState<AgentRole | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  /** Find the agent assigned to a pipeline role (first match). */
-  const agentFor = useCallback(
-    (role: AgentRole) => agents.find((a) => a.role === role) ?? null,
-    [agents]
-  );
 
   async function testAgent(agent: AgentCardModel) {
     setStatuses((s) => ({ ...s, [agent.id]: "checking" }));
@@ -620,9 +584,7 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
   }
 
   async function testAll() {
-    const toTest = PIPELINE.map((p) => agentFor(p.role)).filter(
-      Boolean
-    ) as AgentCardModel[];
+    const toTest = [...agents];
 
     setStatuses((s) => {
       const next = { ...s };
@@ -638,35 +600,32 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
             : await checkTool(agent.command);
         setStatuses((s) => ({ ...s, [agent.id]: ok ? "ok" : "fail" }));
       })
-    );
+      );
   }
 
-  function openEditForRole(role: AgentRole) {
-    const existing = agentFor(role);
-    setEditingAgent(existing);
-    setEditingRole(role);
+  function openEdit(agent: AgentCardModel | null) {
+    setEditingAgent(agent);
     setDialogOpen(true);
   }
 
   function handleSave(saved: AgentCardModel) {
-    // Ensure the role matches the slot being edited
-    const agent = editingRole ? { ...saved, role: editingRole } : saved;
-
-    if (agents.some((a) => a.id === agent.id)) {
-      setAgents(agents.map((a) => (a.id === agent.id ? agent : a)));
+    if (agents.some((a) => a.id === saved.id)) {
+      setAgents(agents.map((a) => (a.id === saved.id ? saved : a)));
     } else {
-      // Remove any existing agent for this role, then add the new one
-      setAgents([
-        ...agents.filter((a) => a.role !== agent.role),
-        agent,
-      ]);
+      setAgents([...agents, saved]);
     }
   }
 
-  const readyCount = PIPELINE.filter((p) => {
-    const a = agentFor(p.role);
-    return a && statuses[a.id] === "ok";
-  }).length;
+  function removeAgent(id: string) {
+    setAgents(agents.filter((a) => a.id !== id));
+    setStatuses((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  const readyCount = agents.filter((a) => statuses[a.id] === "ok").length;
 
   return (
     <div className="space-y-6">
@@ -675,22 +634,26 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
         <div>
           <h2 className="text-lg font-semibold">Agent Squad</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Define which agent handles each pipeline stage
+            Configure agents in execution order
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={testAll}>
-          <RefreshCw className="size-3.5" />
-          Test All
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={testAll} disabled={agents.length === 0}>
+            <RefreshCw className="size-3.5" />
+            Test All
+          </Button>
+          <Button size="sm" onClick={() => openEdit(null)}>
+            Add Agent
+          </Button>
+        </div>
       </div>
 
-      {/* Pipeline flow */}
+      {/* Execution flow */}
       <div className="flex items-center gap-1 overflow-x-auto pb-1">
-        {PIPELINE.map((stage, i) => {
-          const agent = agentFor(stage.role);
-          const status = agent ? (statuses[agent.id] ?? "unknown") : "unknown";
+        {agents.map((agent, i) => {
+          const status = statuses[agent.id] ?? "unknown";
           return (
-            <div key={stage.role} className="flex items-center gap-1 shrink-0">
+            <div key={agent.id} className="flex items-center gap-1 shrink-0">
               <div
                 className={cn(
                   "flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
@@ -702,49 +665,45 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
                 )}
               >
                 <StatusDot status={status} />
-                <span className={ROLE_COLOR[stage.role]}>{stage.label}</span>
+                <span className={ROLE_COLOR[agent.role]}>{agent.name}</span>
               </div>
-              {i < PIPELINE.length - 1 && (
+              {i < agents.length - 1 && (
                 <ChevronRight className="size-3.5 text-muted-foreground" />
               )}
             </div>
           );
         })}
         <div className="ml-auto shrink-0 text-xs text-muted-foreground pl-3">
-          {readyCount}/{PIPELINE.length} ready
+          {readyCount}/{agents.length} ready
         </div>
       </div>
 
-      {/* Role slots */}
+      {/* Agent cards */}
       <div className="space-y-3">
-        {PIPELINE.map((stage) => {
-          const agent = agentFor(stage.role);
-          const status = agent ? (statuses[agent.id] ?? "unknown") : "unknown";
+        {agents.map((agent, index) => {
+          const status = statuses[agent.id] ?? "unknown";
 
           return (
             <div
-              key={stage.role}
+              key={agent.id}
               className={cn(
                 "rounded-lg border p-5 transition-colors",
-                ROLE_ACCENT[stage.role]
+                ROLE_ACCENT[agent.role]
               )}
             >
               <div className="flex items-start justify-between gap-3">
-                {/* Left: role info */}
+                {/* Left: identity */}
                 <div className="space-y-0.5 min-w-0">
                   <div
                     className={cn(
                       "text-xs font-bold tracking-widest uppercase",
-                      ROLE_COLOR[stage.role]
+                      ROLE_COLOR[agent.role]
                     )}
                   >
-                    {stage.label}
+                    #{index + 1} · {agent.role}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {stage.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground/50 font-mono">
-                    env: {stage.envGroup}
+                    {agent.name}
                   </p>
                 </div>
 
@@ -771,53 +730,56 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs px-2"
-                    onClick={() => openEditForRole(stage.role)}
+                    onClick={() => openEdit(agent)}
                   >
                     <Pencil className="size-3" />
-                    {agent ? "Edit" : "Configure"}
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => removeAgent(agent.id)}
+                  >
+                    Remove
                   </Button>
                 </div>
               </div>
 
               {/* Agent info */}
-              {agent ? (
-                <div className="mt-4 rounded-md bg-background/50 border border-border/60 p-3 space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold">{agent.name}</span>
-                    <Badge
-                      variant="outline"
-                      className="text-xs h-5 font-normal"
-                    >
-                      {agent.provider === "native" ? "Native CLI" : "Ollama"}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground flex-wrap">
-                    <span className="text-foreground font-semibold">
-                      {agent.command}
-                    </span>
-                    {agent.model && (
-                      <>
-                        <span className="text-muted-foreground/40">·</span>
-                        <span>{agent.model}</span>
-                      </>
-                    )}
-                  </div>
-                  {agent.goal && (
-                    <p className="text-xs text-muted-foreground">{agent.goal}</p>
+              <div className="mt-4 rounded-md bg-background/50 border border-border/60 p-3 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold">{agent.name}</span>
+                  <Badge
+                    variant="outline"
+                    className="text-xs h-5 font-normal"
+                  >
+                    {agent.provider === "native" ? "Native CLI" : "Ollama"}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground flex-wrap">
+                  <span className="text-foreground font-semibold">
+                    {agent.command}
+                  </span>
+                  {agent.model && (
+                    <>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span>{agent.model}</span>
+                    </>
                   )}
                 </div>
-              ) : (
-                <div className="mt-4 rounded-md border border-dashed border-border/60 px-4 py-3 text-center">
-                  <p className="text-xs text-muted-foreground">
-                    No agent configured — click{" "}
-                    <strong className="text-foreground">Configure</strong> to
-                    assign one
-                  </p>
-                </div>
-              )}
+                {agent.goal && (
+                  <p className="text-xs text-muted-foreground">{agent.goal}</p>
+                )}
+              </div>
             </div>
           );
         })}
+        {agents.length === 0 && (
+          <div className="rounded-md border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+            No agents configured yet. Click <strong className="text-foreground">Add Agent</strong>.
+          </div>
+        )}
       </div>
 
       <AgentDialog
@@ -827,7 +789,6 @@ function TeamView({ agents, setAgents }: TeamViewProps) {
         onClose={() => {
           setDialogOpen(false);
           setEditingAgent(null);
-          setEditingRole(null);
         }}
       />
     </div>
@@ -850,10 +811,9 @@ function parseLog(payload: TaskLogPayload): LogLine {
     };
   }
   if (line.startsWith("[pumice:done]"))
-    return {
-      text: "✓ " + line.replace("[pumice:done] ", ""),
-      kind: "ok",
-    };
+    return { text: "✓ " + line.replace("[pumice:done] ", ""), kind: "ok" };
+  if (line.startsWith("[pumice:hub]"))
+    return { text: line, kind: "info" };
   if (line.startsWith("[pumice:error]") || line.startsWith("[pumice:abort]"))
     return { text: line, kind: "err" };
   if (line.startsWith("[pumice]"))
@@ -862,11 +822,27 @@ function parseLog(payload: TaskLogPayload): LogLine {
   return { text: line, kind: "dim" };
 }
 
-function stageOf(line: string): number {
-  for (let i = 0; i < PIPELINE.length; i++) {
-    if (line.toLowerCase().includes(PIPELINE[i].role)) return i;
+function stageOf(line: string, stageRoles: string[]): number {
+  for (let i = 0; i < stageRoles.length; i++) {
+    if (line.toLowerCase().includes(stageRoles[i].toLowerCase())) return i;
   }
   return -1;
+}
+
+/** Parse the final review summary (printed after [pumice:done]) into per-role outputs. */
+function parseReviewSections(lines: string[]): Record<string, string> {
+  const text = lines.join("\n");
+  const result: Record<string, string> = {};
+  const parts = text.split(/\n\n---\n\n/);
+  for (const part of parts) {
+    const headerMatch = part.match(/^## ([A-Z]+) \([^)]+\)/m);
+    if (!headerMatch) continue;
+    const role = headerMatch[1].toLowerCase() as AgentRole;
+    // Skip the header block (## ROLE, Task ID, Status lines), keep the rest
+    const afterHeader = part.replace(/^## [A-Z]+ \([^)]+\)\n(Task ID:[^\n]*\n)?(Status:[^\n]*\n)?/, "").trim();
+    if (afterHeader) result[role] = afterHeader;
+  }
+  return result;
 }
 
 interface ExecuteViewProps {
@@ -878,43 +854,93 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [mockMode, setMockMode] = useState(false);
+  const hubMode = true;
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [activeStage, setActiveStage] = useState(-1);
   const [doneStages, setDoneStages] = useState<number[]>([]);
+  const [errorStages, setErrorStages] = useState<number[]>([]);
+  const [hubUrl, setHubUrl] = useState<string | null>(null);
+  const [hubRunning, setHubRunning] = useState(false);
+  const [agentResults, setAgentResults] = useState<Record<string, string>>({});
+  const [expandedRole, setExpandedRole] = useState<string | null>(null);
+  const [logsOpen, setLogsOpen] = useState(false);
+
   const logEndRef = useRef<HTMLDivElement>(null);
+  const reviewBufferRef = useRef<string[]>([]);
+  const inReviewRef = useRef(false);
+  const executionStages = agents.map((agent, index) => ({
+    key: agent.id,
+    role: agent.role,
+    label: agent.name,
+    outputKey: agent.role,
+    index
+  }));
+  const stageRoles = executionStages.map((s) => s.role);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (logsOpen) logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs, logsOpen]);
 
   const addLog = (entry: LogLine) => setLogs((p) => [...p, entry]);
+
+  function toggleRole(role: string) {
+    setExpandedRole((prev) => (prev === role ? null : role));
+  }
 
   async function handleRun() {
     if (!title.trim() || running) return;
     setRunning(true);
     setLogs([]);
     setDoneStages([]);
+    setErrorStages([]);
     setActiveStage(0);
+    setHubUrl(null);
+    setHubRunning(false);
+    setAgentResults({});
+    setExpandedRole(null);
+    reviewBufferRef.current = [];
+    inReviewRef.current = false;
 
     let unlisten: (() => void) | null = null;
 
     try {
       unlisten = await onTaskLog((payload) => {
+        const { line, level } = payload;
         const entry = parseLog(payload);
         addLog(entry);
 
-        if (payload.line.startsWith("[pumice:stage]")) {
-          const idx = stageOf(payload.line);
-          if (idx !== -1) setActiveStage(idx);
+        // Hub lifecycle
+        if (line.startsWith("[pumice:hub] started at")) {
+          const url = line.split("started at ")[1]?.trim();
+          if (url) setHubUrl(url);
+          setHubRunning(true);
         }
-        if (
-          payload.line.startsWith("[pumice:result]") &&
-          / ok$/.test(payload.line.trim())
-        ) {
-          const idx = stageOf(payload.line);
-          if (idx !== -1)
-            setDoneStages((p) => (p.includes(idx) ? p : [...p, idx]));
+        if (line.startsWith("[pumice:hub] stopped")) {
+          setHubRunning(false);
+        }
+
+        // Stage tracking
+        if (line.startsWith("[pumice:stage]")) {
+          const idx = stageOf(line, stageRoles);
+          if (idx !== -1) setActiveStage(idx);
+          inReviewRef.current = false;
+        }
+        if (line.startsWith("[pumice:result]")) {
+          const ok = / ok$/.test(line.trim());
+          const idx = stageOf(line, stageRoles);
+          if (idx !== -1) {
+            if (ok) setDoneStages((p) => (p.includes(idx) ? p : [...p, idx]));
+            else setErrorStages((p) => (p.includes(idx) ? p : [...p, idx]));
+          }
+        }
+
+        // Review summary accumulation (after [pumice:done])
+        if (line.startsWith("[pumice:done]")) {
+          inReviewRef.current = true;
+          reviewBufferRef.current = [];
+        } else if (inReviewRef.current && level === "stdout") {
+          reviewBufferRef.current.push(line);
         }
       });
 
@@ -923,41 +949,58 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
         description,
         projectPath ? `Target project: ${projectPath}` : "",
         projectPath || ".",
-        mockMode
+        mockMode,
+        hubMode
       );
+
+      // Parse per-agent outputs from accumulated review buffer
+      const parsed = parseReviewSections(reviewBufferRef.current);
+      if (Object.keys(parsed).length > 0) {
+        setAgentResults(parsed);
+        // Auto-expand first result
+        setExpandedRole(Object.keys(parsed)[0]);
+      }
 
       if (!success)
         addLog({ text: "Completed with errors — see output above.", kind: "err" });
-    } catch {
-      // Tauri not available → simulate
-      addLog({ text: "Tauri not available — running simulation", kind: "dim" });
-      addLog({ text: `Task: ${title}`, kind: "info" });
-      for (let i = 0; i < PIPELINE.length; i++) {
-        const stage = PIPELINE[i];
-        const agent = agents.find((a) => a.role === stage.role);
-        setActiveStage(i);
-        addLog({
-          text: `▶ ${stage.label}${agent ? ` (${agent.name} · ${agent.command})` : ""}`,
+      } catch {
+        // Tauri not available → simulate
+        addLog({ text: "Tauri not available — running simulation", kind: "dim" });
+        for (let i = 0; i < executionStages.length; i++) {
+          const stage = executionStages[i];
+          const agent = agents[i] ?? null;
+          setActiveStage(i);
+          addLog({
+            text: `▶ ${stage.label}${agent ? ` (${agent.name})` : ""}`,
           kind: "info",
         });
-        await new Promise((r) => setTimeout(r, 1200 + Math.random() * 600));
-        addLog({ text: `✓ ${stage.label} complete`, kind: "ok" });
-        setDoneStages((p) => [...p, i]);
-      }
-      addLog({ text: "✓ Simulation complete.", kind: "ok" });
+        await new Promise((r) => setTimeout(r, 800 + Math.random() * 400));
+          addLog({ text: `✓ ${stage.label} complete`, kind: "ok" });
+          setDoneStages((p) => [...p, i]);
+          setAgentResults((p) => ({
+            ...p,
+            [stage.outputKey]: `Simulated output for ${stage.label} stage.`,
+          }));
+        }
+        addLog({ text: "✓ Simulation complete.", kind: "ok" });
     } finally {
       unlisten?.();
       setRunning(false);
       setActiveStage(-1);
+      setHubRunning(false);
+      setLogsOpen(true);
     }
   }
+
+  const hasResults = Object.keys(agentResults).length > 0;
+  const allDone = doneStages.length + errorStages.length === executionStages.length;
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Execute</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Define a task and run your squad
+          Define a task and launch your agent squad
         </p>
       </div>
 
@@ -989,83 +1032,11 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
         </CardContent>
       </Card>
 
-      {/* Team preview */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Execution Pipeline</CardTitle>
-          <CardDescription>
-            Each stage runs in sequence, passing results forward
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            {PIPELINE.map((stage, idx) => {
-              const agent = agents.find((a) => a.role === stage.role);
-              const isActive = running && activeStage === idx;
-              const isDone = doneStages.includes(idx);
-
-              return (
-                <div
-                  key={stage.role}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md border px-3 py-2.5 transition-all",
-                    isActive && "border-primary/40 bg-primary/5",
-                    isDone && "border-emerald-500/30 bg-emerald-500/5",
-                    !isActive && !isDone && "border-border bg-muted/10"
-                  )}
-                >
-                  <div className="w-24 shrink-0">
-                    <span
-                      className={cn(
-                        "text-xs font-bold tracking-wider uppercase",
-                        isActive || isDone
-                          ? ROLE_COLOR[stage.role]
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {stage.label}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {agent ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium truncate">
-                          {agent.name}
-                        </span>
-                        <span className="text-xs font-mono text-muted-foreground truncate">
-                          {agent.command}
-                          {agent.model && ` · ${agent.model}`}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground italic">
-                        No agent configured
-                      </span>
-                    )}
-                  </div>
-                  <div className="shrink-0">
-                    {isActive && (
-                      <Loader className="size-3.5 text-primary animate-spin" />
-                    )}
-                    {isDone && (
-                      <CheckCircle className="size-3.5 text-emerald-400" />
-                    )}
-                    {!isActive && !isDone && (
-                      <Circle className="size-3.5 text-muted-foreground/30" />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Run controls */}
-      <div className="flex gap-3">
+      <div className="flex gap-2 flex-wrap">
         <Button
           size="lg"
-          className="flex-1"
+          className="flex-1 min-w-32"
           onClick={handleRun}
           disabled={running || !title.trim()}
         >
@@ -1082,10 +1053,11 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
           )}
         </Button>
 
+        {/* Mock toggle */}
         <button
           onClick={() => setMockMode((v) => !v)}
           disabled={running}
-          title="Mock mode — simulates agent responses without calling any CLI"
+          title="Mock mode — simulates responses without calling any CLI"
           className={cn(
             "flex items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors shrink-0",
             mockMode
@@ -1093,59 +1065,503 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
               : "border-border text-muted-foreground hover:text-foreground"
           )}
         >
-          {mockMode ? (
-            <ToggleRight className="size-4" />
-          ) : (
-            <ToggleLeft className="size-4" />
-          )}
+          {mockMode ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
           Mock
         </button>
+
+        <div className="flex items-center gap-1.5 rounded-md border border-violet-500/40 bg-violet-500/10 px-3 text-xs font-medium text-violet-400">
+          <Network className="size-4" />
+          Hub always on
+        </div>
       </div>
 
+      {/* Option badges */}
       {mockMode && (
-        <p className="text-xs text-muted-foreground/70 -mt-1">
-          Mock mode: agents return simulated responses — no CLI or API calls are
-          made.
-        </p>
+        <div className="flex gap-2 flex-wrap -mt-1">
+          <span className="text-xs text-muted-foreground/70">
+            Mock: agents return simulated responses — no CLI calls made.
+          </span>
+        </div>
       )}
 
-      {/* Log output */}
+      {/* Hub status badge (live, during run) */}
+      {(running || hubUrl) && (
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-mono transition-colors",
+            hubRunning
+              ? "border-violet-500/30 bg-violet-500/5 text-violet-300"
+              : "border-border text-muted-foreground"
+          )}
+        >
+          <Server className="size-3.5 shrink-0" />
+          {hubRunning ? (
+            <>
+              <span className="size-1.5 rounded-full bg-violet-400 animate-pulse" />
+              Hub running — {hubUrl}
+            </>
+          ) : hubUrl ? (
+            <>
+              <Square className="size-3 text-muted-foreground/50" />
+              Hub stopped
+            </>
+          ) : (
+            <>
+              <Loader className="size-3 animate-spin" />
+              Starting hub…
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Pipeline — stages + results */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            Execution Pipeline
+            {running && (
+              <Badge variant="outline" className="text-xs h-5 font-normal border-primary/30 text-primary">
+                Running
+              </Badge>
+            )}
+            {!running && allDone && hasResults && (
+              <Badge variant="outline" className="text-xs h-5 font-normal border-emerald-500/30 text-emerald-400">
+                Complete
+              </Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            {executionStages.length > 0
+              ? "Each stage reads context from the hub before running, then publishes its output"
+              : "No execution stages yet. Add agents in Team to define the run order."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 pb-4">
+          {executionStages.map((stage, idx) => {
+            const agent = agents[idx] ?? agents.find((a) => a.role === stage.role);
+            const isActive = running && activeStage === idx;
+            const isDone = doneStages.includes(idx);
+            const isError = errorStages.includes(idx);
+            const output = agentResults[stage.outputKey];
+            const isExpanded = expandedRole === stage.outputKey;
+
+            return (
+              <div
+                key={stage.key}
+                className={cn(
+                  "rounded-lg border transition-all overflow-hidden",
+                  isActive && "border-primary/40 bg-primary/5",
+                  isDone && !isExpanded && "border-emerald-500/25 bg-emerald-500/5",
+                  isDone && isExpanded && "border-emerald-500/40 bg-emerald-500/5",
+                  isError && "border-red-500/25 bg-red-500/5",
+                  !isActive && !isDone && !isError && "border-border bg-muted/10"
+                )}
+              >
+                {/* Stage header row */}
+                <div className="flex items-center gap-3 px-3 py-2.5">
+                  {/* Status icon */}
+                  <div className="shrink-0 w-4 flex justify-center">
+                    {isActive && <Loader className="size-3.5 text-primary animate-spin" />}
+                    {isDone && <CheckCircle className="size-3.5 text-emerald-400" />}
+                    {isError && <XCircle className="size-3.5 text-red-400" />}
+                    {!isActive && !isDone && !isError && (
+                      <Circle className="size-3.5 text-muted-foreground/30" />
+                    )}
+                  </div>
+
+                  {/* Role label */}
+                  <span
+                    className={cn(
+                      "w-20 shrink-0 text-xs font-bold tracking-wider uppercase",
+                      isActive || isDone || isError
+                        ? ROLE_COLOR[(stage.role as AgentRole) ?? "backend"]
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    {stage.label}
+                  </span>
+
+                  {/* Agent info */}
+                  <div className="flex-1 min-w-0">
+                    {agent ? (
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs font-medium truncate">{agent.name}</span>
+                        <span className="text-xs font-mono text-muted-foreground truncate">
+                          {agent.command}{agent.model && ` · ${agent.model}`}
+                        </span>
+                        {agent.provider === "ollama" && (
+                          <Badge variant="outline" className="h-4 text-[10px] px-1.5 font-normal shrink-0">
+                            ollama
+                          </Badge>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">
+                        No agent configured
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Expand/collapse if has output */}
+                  {output && (
+                    <button
+                      onClick={() => toggleRole(stage.outputKey)}
+                      className="shrink-0 ml-auto p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                      title={isExpanded ? "Collapse output" : "Expand output"}
+                    >
+                      {isExpanded
+                        ? <ChevronUp className="size-3.5" />
+                        : <ChevronDown className="size-3.5" />}
+                    </button>
+                  )}
+                </div>
+
+                {/* Expanded output panel */}
+                {output && isExpanded && (
+                  <div className="border-t border-border/60">
+                    <ScrollArea className="h-72 w-full">
+                      <div className="p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                        {output}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+
+                {/* Running: show current activity */}
+                {isActive && (
+                  <div className="border-t border-primary/20 px-3 py-1.5">
+                    <span className="text-xs text-primary/70 flex items-center gap-1.5">
+                      <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+                      Agent is working…
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {executionStages.length === 0 && (
+            <div className="rounded-md border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+              Configure at least one agent in <strong className="text-foreground">Team</strong> to run.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Terminal log (collapsible) */}
       {logs.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader
+            className="pb-2 cursor-pointer select-none"
+            onClick={() => setLogsOpen((v) => !v)}
+          >
             <CardTitle className="text-sm flex items-center gap-2">
               <TerminalSquare className="size-4 text-muted-foreground" />
-              Output
+              Terminal Output
+              <span className="ml-auto text-xs font-normal text-muted-foreground">
+                {logs.length} lines
+              </span>
+              {logsOpen
+                ? <ChevronUp className="size-3.5 text-muted-foreground" />
+                : <ChevronDown className="size-3.5 text-muted-foreground" />}
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-64 w-full rounded-md bg-background border border-border">
-              <div className="p-3 font-mono text-xs space-y-0.5">
-                {logs.map((line, i) =>
-                  line.text === "" ? (
-                    <div key={i} className="h-2" />
-                  ) : (
-                    <div
-                      key={i}
-                      className={cn(
-                        "leading-relaxed whitespace-pre-wrap break-all",
-                        line.kind === "ok" && "text-emerald-400",
-                        line.kind === "info" && "text-foreground",
-                        line.kind === "err" && "text-red-400",
-                        line.kind === "dim" && "text-muted-foreground"
-                      )}
-                    >
-                      {line.text}
-                    </div>
-                  )
-                )}
-                <div ref={logEndRef} />
-              </div>
-            </ScrollArea>
-          </CardContent>
+          {logsOpen && (
+            <CardContent>
+              <ScrollArea className="h-72 w-full rounded-md bg-background border border-border">
+                <div className="p-3 font-mono text-xs space-y-0.5">
+                  {logs.map((line, i) =>
+                    line.text === "" ? (
+                      <div key={i} className="h-2" />
+                    ) : (
+                      <div
+                        key={i}
+                        className={cn(
+                          "leading-relaxed whitespace-pre-wrap break-all",
+                          line.kind === "ok" && "text-emerald-400",
+                          line.kind === "info" && "text-foreground",
+                          line.kind === "err" && "text-red-400",
+                          line.kind === "dim" && "text-muted-foreground"
+                        )}
+                      >
+                        {line.text}
+                      </div>
+                    )
+                  )}
+                  <div ref={logEndRef} />
+                </div>
+              </ScrollArea>
+            </CardContent>
+          )}
         </Card>
       )}
     </div>
+  );
+}
+
+// ─── Agents View ──────────────────────────────────────────────────────────────
+
+interface HubCommand {
+  id: string;
+  target: string;
+  message: string;
+  issuedAt: string;
+  status: "queued" | "delivered" | "processing" | "completed";
+  deliveredTo: string[];
+  pulledBy: string[];
+  respondedBy: string[];
+}
+interface HubResponse {
+  id: string;
+  commandId: string;
+  agentId: string;
+  output: string;
+  respondedAt: string;
+}
+
+const HUB_BASE_URL = "http://127.0.0.1:47821";
+
+function AgentsView() {
+  const [connectedAgents, setConnectedAgents] = useState<ConnectedAgent[]>([]);
+  const [history, setHistory] = useState<HubCommand[]>([]);
+  const [responses, setResponses] = useState<HubResponse[]>([]);
+  const [target, setTarget] = useState("*");
+  const [command, setCommand] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadHubData() {
+    try {
+      const [agentsRes, commandsRes, responsesRes] = await Promise.all([
+        fetch(`${HUB_BASE_URL}/api/agents`),
+        fetch(`${HUB_BASE_URL}/api/commands`),
+        fetch(`${HUB_BASE_URL}/api/responses`)
+      ]);
+
+      if (!agentsRes.ok || !commandsRes.ok || !responsesRes.ok) {
+        throw new Error("Hub unavailable");
+      }
+
+      const [agents, commands, responses] = await Promise.all([
+        agentsRes.json() as Promise<ConnectedAgent[]>,
+        commandsRes.json() as Promise<HubCommand[]>,
+        responsesRes.json() as Promise<HubResponse[]>
+      ]);
+
+      setConnectedAgents(agents);
+      setHistory(commands.slice(0, 20));
+      setResponses(responses.slice(0, 30));
+      setError(null);
+    } catch {
+      setError("Could not connect to MCP Hub on 127.0.0.1:47821.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadHubData();
+    const id = setInterval(loadHubData, 2000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (target !== "*" && !connectedAgents.some((a) => a.id === target)) {
+      setTarget("*");
+    }
+  }, [target, connectedAgents]);
+
+  async function sendCommand(selectedTarget: string) {
+    if (!command.trim()) return;
+    setSending(true);
+    try {
+      const res = await fetch(`${HUB_BASE_URL}/api/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target: selectedTarget,
+          message: command.trim()
+        })
+      });
+      if (!res.ok) {
+        throw new Error("Failed");
+      }
+      setCommand("");
+      await loadHubData();
+    } catch {
+      setError("Failed to send command through MCP Hub.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Connected Agents</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Dynamic agents registered in MCP Hub
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={loadHubData}>
+          <RefreshCw className="size-3.5" />
+          Refresh
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Command Center</CardTitle>
+          <CardDescription>
+            Send a command to one agent or broadcast to all connected agents.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[220px_1fr]">
+            <Select value={target} onValueChange={setTarget}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="*">All Agents</SelectItem>
+                {connectedAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              placeholder="e.g. pull latest context and report blockers"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => sendCommand(target)} disabled={sending || !command.trim()}>
+              <Send className="size-3.5" />
+              Send
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => sendCommand("*")}
+              disabled={sending || !command.trim()}
+            >
+              Broadcast
+            </Button>
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Live Agents</CardTitle>
+          <CardDescription>
+            {loading
+              ? "Loading agents..."
+              : `${connectedAgents.length} agent${connectedAgents.length === 1 ? "" : "s"} connected`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {connectedAgents.map((agent) => (
+            <div
+              key={agent.id}
+              className="rounded-md border border-border/70 bg-muted/10 px-3 py-2"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{agent.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono truncate">
+                    {agent.id}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {agent.role && (
+                    <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                      {agent.role}
+                    </Badge>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    onClick={() => setTarget(agent.id)}
+                  >
+                    Target
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!loading && connectedAgents.length === 0 && (
+            <div className="rounded-md border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+              No connected agents in the hub.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Command History</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {history.map((entry) => (
+            <div
+              key={entry.id}
+              className="rounded-md border border-border/60 bg-background/40 px-3 py-2"
+            >
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                    {entry.target === "*" ? "broadcast" : entry.target}
+                  </Badge>
+                  <span className="text-muted-foreground">{entry.status}</span>
+                  <span className="text-muted-foreground">
+                    {entry.respondedBy.length}/{entry.deliveredTo.length} responses
+                  </span>
+                  <span className="ml-auto text-muted-foreground">
+                    {new Date(entry.issuedAt).toLocaleTimeString()}
+                  </span>
+              </div>
+              <p className="mt-1 text-sm">{entry.message}</p>
+            </div>
+          ))}
+            {history.length === 0 && (
+              <p className="text-sm text-muted-foreground">No commands sent yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Responses</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {responses.map((entry) => (
+            <div
+              key={entry.id}
+              className="rounded-md border border-border/60 bg-background/40 px-3 py-2"
+            >
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline" className="h-5 text-[10px] font-normal">
+                  {entry.agentId}
+                </Badge>
+                <span>{entry.commandId}</span>
+                <span className="ml-auto">
+                  {new Date(entry.respondedAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <p className="mt-1 text-sm">{entry.output}</p>
+            </div>
+          ))}
+          {responses.length === 0 && (
+            <p className="text-sm text-muted-foreground">No responses yet.</p>
+          )}
+        </CardContent>
+      </Card>
+      </div>
   );
 }
 
@@ -1154,6 +1570,7 @@ function ExecuteView({ agents, projectPath }: ExecuteViewProps) {
 const NAV: { id: View; label: string; icon: typeof Settings }[] = [
   { id: "project", label: "Project", icon: Settings },
   { id: "team", label: "Team", icon: Users },
+  { id: "agents", label: "Agents", icon: Bot },
   { id: "execute", label: "Execute", icon: Play },
 ];
 
@@ -1265,6 +1682,7 @@ export function App() {
             {view === "team" && (
               <TeamView agents={agents} setAgents={setAgents} />
             )}
+            {view === "agents" && <AgentsView />}
             {view === "execute" && (
               <ExecuteView agents={agents} projectPath={projectPath} />
             )}

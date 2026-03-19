@@ -1,6 +1,26 @@
-import { MasterTask, SubTask } from "../types.js";
+import { MasterTask, SubTask, PipelineAgentConfig } from "../types.js";
 
-export function createPlan(task: MasterTask): SubTask[] {
+export function createPlan(
+  task: MasterTask,
+  agents: PipelineAgentConfig[] = []
+): SubTask[] {
+  if (agents.length > 0) {
+    return agents.map((agent, index) => {
+      const id = `task-${index + 1}`;
+      const dependsOn =
+        index === 0 ? undefined : agents.slice(0, index).map((_, i) => `task-${i + 1}`);
+
+      return {
+        id,
+        title: `${agent.name}: ${task.title}`,
+        role: agent.role,
+        dependsOn,
+        agent,
+        instructions: buildDynamicInstructions(task, agent)
+      };
+    });
+  }
+
   return [
     {
       id: "task-1",
@@ -90,4 +110,31 @@ Expected output:
       dependsOn: ["task-1", "task-2", "task-3"]
     }
   ];
+}
+
+function buildDynamicInstructions(task: MasterTask, agent: PipelineAgentConfig) {
+  return [
+    `You are ${agent.name}.`,
+    `Primary role: ${agent.role}.`,
+    agent.goal ? `Goal: ${agent.goal}` : "",
+    "",
+    "Execute your stage for the task below. Reuse prior shared context when available.",
+    "",
+    "TITLE:",
+    task.title,
+    "",
+    "DESCRIPTION:",
+    task.description,
+    "",
+    "CONTEXT:",
+    task.context ?? "No additional context",
+    "",
+    "Expected output:",
+    "- concise execution summary",
+    "- important decisions",
+    "- files/commands when relevant",
+    "- risks or open questions"
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

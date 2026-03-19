@@ -5,6 +5,7 @@ export const config = {
   projectName: process.env.PROJECT_NAME ?? "Pumice",
   workspaceDir: process.env.WORKSPACE_DIR ?? "./workspace",
   obsidianVaultDir: process.env.OBSIDIAN_VAULT_DIR ?? "./obsidian-vault",
+  targetProjectDir: process.env.PUMICE_PROJECT_DIR || undefined,
   mockResponses: process.env.PUMICE_MOCK_RESPONSES === "true",
   failFast: process.env.PUMICE_FAIL_FAST === "true",
   ollamaCommand: process.env.OLLAMA_COMMAND ?? "ollama",

@@ -9,75 +9,76 @@ import { writeMcpConfig } from "../hub/mcp-config.js";
 
 export async function dispatchTask(
   task: SubTask,
-  hubClient?: HubClient | null
+  hubClient?: HubClient | null,
+  vaultContext?: string
 ): Promise<AgentResult> {
-  const instructions = await buildInstructions(task.instructions, hubClient);
+  const instructions = await buildInstructions(task.instructions, hubClient, vaultContext);
+  const engine = inferEngine(task);
+  const agentLabel = task.agent?.name ?? engine;
+  const provider = inferProvider(task, engine);
+  const command = inferCommand(task, engine);
+  const model = task.agent?.model ?? inferModel(engine);
+  const cwd = config.targetProjectDir;
 
-  if (task.role === "architect" || task.role === "reviewer") {
-    if (config.mockResponses) {
-      return buildMockResult("claude", task);
-    }
-
-    const mcpConfigPath = hubClient ? await writeMcpConfig(config.hub.url).catch(() => undefined) : undefined;
-    const result = await runClaude(instructions, mcpConfigPath);
-    return {
-      agent: config.claude.provider === "ollama" ? "ollama" : "claude",
-      role: task.role,
-      taskId: task.id,
-      success: result.success,
-      output: result.success
-        ? result.stdout
-        : formatAgentError(
-            "claude",
-            config.claude.command,
-            config.claude.provider,
-            result.stderr
-          )
-    };
-  }
-
-  if (task.role === "backend" || task.role === "frontend") {
-    if (config.mockResponses) {
-      return buildMockResult("codex", task);
-    }
-
-    const result = await runCodex(instructions);
-    return {
-      agent: config.codex.provider === "ollama" ? "ollama" : "codex",
-      role: task.role,
-      taskId: task.id,
-      success: result.success,
-      output: result.success
-        ? result.stdout
-        : formatAgentError(
-            "codex",
-            config.codex.command,
-            config.codex.provider,
-            result.stderr
-          )
-    };
+  if (hubClient && task.agent) {
+    await hubClient
+      .registerAgent({
+        id: task.agent.id,
+        name: task.agent.name,
+        role: task.agent.role,
+        capabilities: [`engine:${engine}`, `provider:${provider}`]
+      })
+      .catch(() => undefined);
   }
 
   if (config.mockResponses) {
-    return buildMockResult("gemini", task);
+    return buildMockResult(agentLabel, task);
   }
 
-  const result = await runGemini(instructions);
+  if (engine === "claude") {
+    const mcpConfigPath = hubClient
+      ? await writeMcpConfig(config.hub.url).catch(() => undefined)
+      : undefined;
+    const result = await runClaude(instructions, mcpConfigPath, {
+      command,
+      provider,
+      model,
+      cwd
+    });
+
+    return {
+      agent: agentLabel,
+      role: task.role,
+      taskId: task.id,
+      success: result.success,
+      output: result.success
+        ? result.stdout
+        : formatAgentError("claude", command, provider, result.stderr)
+    };
+  }
+
+  if (engine === "codex") {
+    const result = await runCodex(instructions, { command, provider, model, cwd });
+    return {
+      agent: agentLabel,
+      role: task.role,
+      taskId: task.id,
+      success: result.success,
+      output: result.success
+        ? result.stdout
+        : formatAgentError("codex", command, provider, result.stderr)
+    };
+  }
+
+  const result = await runGemini(instructions, { command, provider, model, cwd });
   return {
-    agent: config.gemini.provider === "ollama" ? "ollama" : "gemini",
+    agent: agentLabel,
     role: task.role,
     taskId: task.id,
     success: result.success,
     output: result.success
       ? result.stdout
-      : formatAgentError(
-          "gemini",
-          config.gemini.provider === "ollama"
-            ? config.ollamaCommand
-            : config.gemini.command,
-          config.gemini.provider,
-          result.stderr
-        )
+      : formatAgentError("gemini", command, provider, result.stderr)
   };
 }
 
@@ -85,24 +86,33 @@ export async function dispatchTask(
  * Fetches the context summary from the hub and prepends it to the base instructions.
  * Falls back to the original instructions if the hub is unavailable.
  */
-async function buildInstructions(base: string, hub?: HubClient | null): Promise<string> {
-  if (!hub) return base;
+async function buildInstructions(
+  base: string,
+  hub?: HubClient | null,
+  vaultContext?: string
+): Promise<string> {
+  const blocks: string[] = [];
+
+  if (vaultContext?.trim()) {
+    blocks.push("## Context from Obsidian Vault", "", vaultContext.trim());
+  }
+
+  if (!hub) {
+    if (blocks.length === 0) return base;
+    return [...blocks, "", "---", "", base].join("\n");
+  }
 
   try {
     const summary = await hub.getContextSummary();
-    if (!summary || summary === "No results published yet.") return base;
+    if (summary && summary !== "No results published yet.") {
+      blocks.push("## Context from previous stages", "", summary);
+    }
 
-    return [
-      "## Context from previous pipeline stages",
-      "",
-      summary,
-      "",
-      "---",
-      "",
-      base
-    ].join("\n");
+    if (blocks.length === 0) return base;
+    return [...blocks, "", "---", "", base].join("\n");
   } catch {
-    return base;
+    if (blocks.length === 0) return base;
+    return [...blocks, "", "---", "", base].join("\n");
   }
 }
 
@@ -129,4 +139,35 @@ function formatAgentError(
     "",
     "Tip: configure the command in .env or set PUMICE_MOCK_RESPONSES=true to validate the orchestration flow without external CLIs."
   ].join("\n");
+}
+
+function inferEngine(task: SubTask): "claude" | "codex" | "gemini" {
+  const command = (task.agent?.command ?? "").toLowerCase();
+  if (command.includes("claude")) return "claude";
+  if (command.includes("codex")) return "codex";
+  if (command.includes("gemini")) return "gemini";
+
+  if (task.role === "architect" || task.role === "reviewer") return "claude";
+  if (task.role === "backend" || task.role === "frontend") return "codex";
+  return "gemini";
+}
+
+function inferProvider(task: SubTask, engine: "claude" | "codex" | "gemini") {
+  if (task.agent?.provider) return task.agent.provider;
+  if (engine === "claude") return config.claude.provider;
+  if (engine === "codex") return config.codex.provider;
+  return config.gemini.provider;
+}
+
+function inferCommand(task: SubTask, engine: "claude" | "codex" | "gemini") {
+  if (task.agent?.command) return task.agent.command;
+  if (engine === "claude") return config.claude.command;
+  if (engine === "codex") return config.codex.command;
+  return config.gemini.command;
+}
+
+function inferModel(engine: "claude" | "codex" | "gemini") {
+  if (engine === "claude") return config.claude.model;
+  if (engine === "codex") return config.codex.model;
+  return config.gemini.model;
 }

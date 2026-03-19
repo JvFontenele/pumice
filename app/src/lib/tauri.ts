@@ -85,7 +85,8 @@ export async function runTask(
   description: string,
   context: string,
   projectPath: string,
-  mockMode: boolean
+  mockMode: boolean,
+  hubMode: boolean = false
 ): Promise<boolean> {
   return invoke<boolean>("run_task", {
     title,
@@ -93,6 +94,7 @@ export async function runTask(
     context,
     projectPath,
     mockMode,
+    hubMode,
   });
 }
 

@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -39,13 +42,27 @@ struct ProjectConfig {
     agents: Vec<AgentConfig>,
 }
 
-/// Event payload streamed to the frontend while a task is running.
 #[derive(Clone, Serialize)]
 struct TaskLog {
-    /// Raw text line from the process.
     line: String,
-    /// "stdout" | "stderr" | "info"
     level: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultNote {
+    /// Absolute path to the file.
+    path: String,
+    /// Path relative to vault root (for display).
+    relative_path: String,
+    /// File name without extension.
+    title: String,
+}
+
+// ── Hub state ─────────────────────────────────────────────────────────────────
+
+struct HubState {
+    child: Mutex<Option<tokio::process::Child>>,
 }
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
@@ -95,8 +112,97 @@ fn save_project_config(project_path: String, config: ProjectConfig) -> Result<bo
     Ok(true)
 }
 
-/// Spawns `npx tsx src/index.ts <title> <description> <context>` from the
-/// Pumice project root and streams every output line as a `task:log` event.
+/// Start the MCP hub server as a background process.
+/// Returns the hub URL (e.g. "http://127.0.0.1:47821").
+/// Safe to call multiple times — returns early if already running.
+#[tauri::command]
+async fn start_hub_server(
+    state: tauri::State<'_, Arc<HubState>>,
+) -> Result<String, String> {
+    let mut guard = state.child.lock().await;
+
+    // Already running — check if process is still alive.
+    if let Some(child) = guard.as_mut() {
+        match child.try_wait() {
+            Ok(None) => return Ok("http://127.0.0.1:47821".to_string()), // still alive
+            _ => { *guard = None; } // died, respawn below
+        }
+    }
+
+    let child = spawn_hub_child()?;
+
+    *guard = Some(child);
+
+    // Give Node.js a moment to bind the port.
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+
+    Ok("http://127.0.0.1:47821".to_string())
+}
+
+/// Stop the hub server process.
+#[tauri::command]
+async fn stop_hub_server(
+    state: tauri::State<'_, Arc<HubState>>,
+) -> Result<(), String> {
+    let mut guard = state.child.lock().await;
+    if let Some(mut child) = guard.take() {
+        child.kill().await.ok();
+    }
+    Ok(())
+}
+
+/// List all Markdown notes in the Obsidian vault directory.
+#[tauri::command]
+fn list_vault_notes(vault_path: String) -> Result<Vec<VaultNote>, String> {
+    let root = Path::new(&vault_path);
+    if !root.exists() {
+        return Err(format!("Vault directory not found: {}", vault_path));
+    }
+
+    let mut notes = Vec::new();
+    collect_md_files(root, root, &mut notes);
+    notes.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(notes)
+}
+
+fn collect_md_files(root: &Path, dir: &Path, notes: &mut Vec<VaultNote>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Skip hidden dirs (.obsidian, .git, etc.)
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.') { continue; }
+        }
+        if path.is_dir() {
+            collect_md_files(root, &path, notes);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let title = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+            notes.push(VaultNote {
+                path: path.to_string_lossy().to_string(),
+                relative_path: relative,
+                title,
+            });
+        }
+    }
+}
+
+/// Read the content of a single vault note.
+#[tauri::command]
+fn read_vault_note(file_path: String) -> Result<String, String> {
+    fs::read_to_string(&file_path)
+        .map_err(|e| format!("failed to read {}: {}", file_path, e))
+}
+
+/// Spawns `npx tsx src/index.ts` and streams output as `task:log` events.
 #[tauri::command]
 async fn run_task(
     app_handle: tauri::AppHandle,
@@ -105,19 +211,13 @@ async fn run_task(
     context: String,
     project_path: String,
     mock_mode: bool,
+    _hub_mode: bool,
 ) -> Result<bool, String> {
     use tauri::Emitter;
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::task;
 
-    // CARGO_MANIFEST_DIR is src-tauri/ at compile time; its parent is the project root
-    // where package.json, src/index.ts, and .env live.
-    let pumice_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-    // Override env vars from the saved project config when available.
+    let pumice_root = get_pumice_root();
     let env_overrides = load_project_env_overrides(&project_path);
 
     app_handle
@@ -130,20 +230,10 @@ async fn run_task(
         )
         .ok();
 
-    // Build the subprocess command.
-    // On Windows, `npx` is a `.cmd` file and must be invoked through cmd.exe.
     #[cfg(target_os = "windows")]
     let mut cmd = {
         let mut c = tokio::process::Command::new("cmd");
-        c.args([
-            "/C",
-            "npx",
-            "tsx",
-            "src/index.ts",
-            &title,
-            &description,
-            &context,
-        ]);
+        c.args(["/C", "npx", "tsx", "src/index.ts", &title, &description, &context]);
         c
     };
 
@@ -161,6 +251,8 @@ async fn run_task(
     if mock_mode {
         cmd.env("PUMICE_MOCK_RESPONSES", "true");
     }
+    cmd.env("PUMICE_HUB", "true");
+    cmd.env("PUMICE_PROJECT_DIR", project_path.clone());
     for (k, v) in &env_overrides {
         cmd.env(k, v);
     }
@@ -175,24 +267,20 @@ async fn run_task(
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
 
-    // Stream stdout lines.
     let app1 = app_handle.clone();
     let t_out = task::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            app1.emit("task:log", TaskLog { line, level: "stdout".to_string() })
-                .ok();
+            app1.emit("task:log", TaskLog { line, level: "stdout".to_string() }).ok();
         }
     });
 
-    // Stream stderr lines (skip blank lines to reduce noise).
     let app2 = app_handle.clone();
     let t_err = task::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             if !line.trim().is_empty() {
-                app2.emit("task:log", TaskLog { line, level: "stderr".to_string() })
-                    .ok();
+                app2.emit("task:log", TaskLog { line, level: "stderr".to_string() }).ok();
             }
         }
     });
@@ -205,6 +293,13 @@ async fn run_task(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+fn get_pumice_root() -> PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+}
+
 fn config_dir(project_path: &str) -> PathBuf {
     Path::new(project_path).join(".pumice")
 }
@@ -213,8 +308,6 @@ fn config_path(project_path: &str) -> PathBuf {
     config_dir(project_path).join("project.json")
 }
 
-/// Reads `.pumice/project.json` from the *target* project and returns env-var
-/// overrides to feed into the TypeScript orchestrator process.
 fn load_project_env_overrides(project_path: &str) -> Vec<(String, String)> {
     let path = config_path(project_path);
     let mut overrides: Vec<(String, String)> = Vec::new();
@@ -227,20 +320,18 @@ fn load_project_env_overrides(project_path: &str) -> Vec<(String, String)> {
     };
 
     if !cfg.obsidian_vault_path.is_empty() {
-        overrides.push((
-            "OBSIDIAN_VAULT_DIR".to_string(),
-            cfg.obsidian_vault_path.clone(),
-        ));
+        overrides.push(("OBSIDIAN_VAULT_DIR".to_string(), cfg.obsidian_vault_path.clone()));
+    }
+    if let Ok(serialized_agents) = serde_json::to_string(&cfg.agents) {
+        overrides.push(("PUMICE_AGENTS_JSON".to_string(), serialized_agents));
     }
 
-    // First agent of each role-group wins; later duplicates are skipped.
     for agent in &cfg.agents {
         let (p, c, m) = match agent.role.as_str() {
             "architect" | "reviewer" => ("CLAUDE_PROVIDER", "CLAUDE_COMMAND", "CLAUDE_MODEL"),
             "backend" | "frontend" => ("CODEX_PROVIDER", "CODEX_COMMAND", "CODEX_MODEL"),
             _ => ("GEMINI_PROVIDER", "GEMINI_COMMAND", "GEMINI_MODEL"),
         };
-
         if !overrides.iter().any(|(k, _)| k == p) {
             overrides.push((p.to_string(), agent.provider.clone()));
             overrides.push((c.to_string(), agent.command.clone()));
@@ -251,7 +342,6 @@ fn load_project_env_overrides(project_path: &str) -> Vec<(String, String)> {
     overrides
 }
 
-/// Returns `true` if `command` is available in the system PATH.
 #[tauri::command]
 fn check_tool(command: String) -> bool {
     #[cfg(target_os = "windows")]
@@ -272,14 +362,11 @@ fn check_tool(command: String) -> bool {
     }
 }
 
-/// Returns `true` if the Ollama server is reachable at `base_url`.
-/// Falls back to checking the `ollama` CLI if no TCP connection succeeds.
 #[tauri::command]
 fn check_ollama(base_url: String) -> bool {
     use std::net::TcpStream;
     use std::time::Duration;
 
-    // Parse host:port from the base URL (e.g. "http://localhost:11434")
     let stripped = base_url
         .trim_end_matches('/')
         .trim_start_matches("https://")
@@ -291,23 +378,72 @@ fn check_ollama(base_url: String) -> bool {
         }
     }
 
-    // Fallback: just check if the `ollama` binary is in PATH
     check_tool("ollama".to_string())
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
+    let hub_state = Arc::new(HubState {
+        child: Mutex::new(None),
+    });
+
     tauri::Builder::default()
+        .manage(hub_state)
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let state = app.state::<Arc<HubState>>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut guard = state.child.lock().await;
+                if guard.is_none() {
+                    if let Ok(child) = spawn_hub_child() {
+                        *guard = Some(child);
+                    }
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             inspect_project,
             load_project_config,
             save_project_config,
+            start_hub_server,
+            stop_hub_server,
+            list_vault_notes,
+            read_vault_note,
             run_task,
             check_tool,
             check_ollama,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn spawn_hub_child() -> Result<tokio::process::Child, String> {
+    let pumice_root = get_pumice_root();
+
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("cmd");
+        c.args(["/C", "npx", "tsx", "src/hub/standalone.ts"]);
+        c
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("npx");
+        c.args(["tsx", "src/hub/standalone.ts"]);
+        c
+    };
+
+    cmd.current_dir(&pumice_root)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    cmd.spawn().map_err(|e| {
+        format!(
+            "Failed to start hub: {}. Make sure Node.js and npx are in PATH.",
+            e
+        )
+    })
 }

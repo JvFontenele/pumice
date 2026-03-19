@@ -1,9 +1,18 @@
 import { HubEntry } from "../types.js";
+import type { ConnectedAgent } from "./server.js";
 
 export interface HubClient {
   publish(entry: Omit<HubEntry, "publishedAt">): Promise<void>;
   getContextSummary(): Promise<string>;
   listResults(): Promise<HubEntry[]>;
+  registerAgent(input: {
+    id: string;
+    name: string;
+    role?: string;
+    capabilities?: string[];
+  }): Promise<void>;
+  unregisterAgent(agentId: string): Promise<void>;
+  listAgents(): Promise<ConnectedAgent[]>;
 }
 
 /**
@@ -40,6 +49,34 @@ export function createHubClient(baseUrl: string): HubClient {
         throw new Error(`Hub list failed ${res.status}`);
       }
       return res.json() as Promise<HubEntry[]>;
+    },
+
+    async registerAgent(input) {
+      const res = await fetch(`${baseUrl}/api/agents/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input)
+      });
+      if (!res.ok) {
+        throw new Error(`Hub register failed ${res.status}`);
+      }
+    },
+
+    async unregisterAgent(agentId) {
+      const res = await fetch(`${baseUrl}/api/agents/${encodeURIComponent(agentId)}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        throw new Error(`Hub unregister failed ${res.status}`);
+      }
+    },
+
+    async listAgents() {
+      const res = await fetch(`${baseUrl}/api/agents`);
+      if (!res.ok) {
+        throw new Error(`Hub agent list failed ${res.status}`);
+      }
+      return res.json() as Promise<ConnectedAgent[]>;
     }
   };
 }

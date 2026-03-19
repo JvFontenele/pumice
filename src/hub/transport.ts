@@ -1,6 +1,16 @@
 import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createMcpServer, store } from "./server.js";
+import {
+  createMcpServer,
+  store,
+  agentRegistry,
+  activeAgents,
+  commandStore,
+  dispatchCommand,
+  pullCommands,
+  addCommandResponse,
+  responseStore
+} from "./server.js";
 import { config } from "../config.js";
 import { HubEntry, AgentName, TaskRole } from "../types.js";
 import * as http from "node:http";
@@ -18,6 +28,19 @@ let httpServer: http.Server | null = null;
  */
 export async function startHub(): Promise<string> {
   const app = express();
+  app.use((_req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    next();
+  });
+  app.use((req, res, next) => {
+    if (req.method === "OPTIONS") {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
   app.use(express.json());
 
   // ── MCP endpoint (for Claude CLI --mcp-config) ──────────────────────────────
@@ -118,9 +141,97 @@ export async function startHub(): Promise<string> {
     res.type("text").send(md);
   });
 
+  /** GET /api/agents — list active connected agents */
+  app.get("/api/agents", (_req, res) => {
+    res.json(activeAgents());
+  });
+
+  /** POST /api/agents/register — register or refresh an agent */
+  app.post("/api/agents/register", (req, res) => {
+    const id = String(req.body?.id ?? "").trim();
+    const name = String(req.body?.name ?? "").trim();
+    const role = req.body?.role ? String(req.body.role) : undefined;
+    const capabilities = Array.isArray(req.body?.capabilities)
+      ? req.body.capabilities.map((v: unknown) => String(v))
+      : undefined;
+
+    if (!id || !name) {
+      res.status(400).json({ error: "missing id or name" });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const existing = agentRegistry.get(id);
+    agentRegistry.set(id, {
+      id,
+      name,
+      role,
+      capabilities,
+      connectedAt: existing?.connectedAt ?? now,
+      lastSeen: now
+    });
+
+    res.json({ ok: true, id });
+  });
+
+  /** DELETE /api/agents/:id — force-disconnect an agent */
+  app.delete("/api/agents/:id", (req, res) => {
+    agentRegistry.delete(req.params.id);
+    res.json({ ok: true });
+  });
+
+  /** POST /api/commands — send command to one agent or all ("*") */
+  app.post("/api/commands", (req, res) => {
+    const target = String(req.body?.target ?? "").trim();
+    const message = String(req.body?.message ?? "").trim();
+
+    if (!target || !message) {
+      res.status(400).json({ error: "missing target or message" });
+      return;
+    }
+
+    const command = dispatchCommand(target, message);
+    res.json(command);
+  });
+
+  /** GET /api/commands — command history */
+  app.get("/api/commands", (_req, res) => {
+    res.json([...commandStore].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt)));
+  });
+
+  /** GET /api/commands/:agentId/pull — pull pending commands for an agent */
+  app.get("/api/commands/:agentId/pull", (req, res) => {
+    res.json(pullCommands(req.params.agentId));
+  });
+
+  /** POST /api/commands/:commandId/respond — submit agent response for command */
+  app.post("/api/commands/:commandId/respond", (req, res) => {
+    const commandId = req.params.commandId;
+    const agentId = String(req.body?.agentId ?? "").trim();
+    const output = String(req.body?.output ?? "").trim();
+
+    if (!agentId || !output) {
+      res.status(400).json({ error: "missing agentId or output" });
+      return;
+    }
+
+    const response = addCommandResponse(commandId, agentId, output);
+    if (!response) {
+      res.status(404).json({ error: "command_not_found" });
+      return;
+    }
+
+    res.json(response);
+  });
+
+  /** GET /api/responses — list recent command responses */
+  app.get("/api/responses", (_req, res) => {
+    res.json([...responseStore].sort((a, b) => b.respondedAt.localeCompare(a.respondedAt)));
+  });
+
   /** GET /health — liveness probe */
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, tool: "pumice-hub", entries: store.size });
+    res.json({ ok: true, tool: "pumice-hub", entries: store.size, agents: activeAgents().length });
   });
 
   return new Promise((resolve, reject) => {

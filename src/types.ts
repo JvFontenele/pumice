@@ -1,14 +1,8 @@
-export type AgentName = "claude" | "codex" | "gemini" | "ollama" | "obsidian";
+export type AgentName = string;
 
 export type AgentProvider = "native" | "ollama";
 
-export type TaskRole =
-  | "architect"
-  | "backend"
-  | "frontend"
-  | "qa"
-  | "reviewer"
-  | "docs";
+export type TaskRole = string;
 
 export interface MasterTask {
   title: string;
@@ -22,6 +16,17 @@ export interface SubTask {
   role: TaskRole;
   instructions: string;
   dependsOn?: string[];
+  agent?: PipelineAgentConfig;
+}
+
+export interface PipelineAgentConfig {
+  id: string;
+  name: string;
+  role: TaskRole;
+  provider: AgentProvider;
+  model: string;
+  command: string;
+  goal: string;
 }
 
 export interface AgentResult {

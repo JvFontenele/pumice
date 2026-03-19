@@ -9,7 +9,8 @@
       "Bash(where codex:*)",
       "Bash(where gemini:*)",
       "Bash(PUMICE_HUB=true CODEX_COMMAND=claude CODEX_PROVIDER=native CODEX_EXTRA_ARGS=\"-p\" GEMINI_COMMAND=claude GEMINI_PROVIDER=native GEMINI_EXTRA_ARGS=\"-p\" npx tsx src/index.ts \"REST API de autenticação JWT\" \"Criar endpoints de login, registro e refresh token em Node.js + TypeScript com express e jsonwebtoken\" \"Projeto Pumice — stack: Node.js 22, TypeScript ESM, sem banco de dados \\(use in-memory store para demo\\)\")",
-      "Bash(PUMICE_HUB=true CODEX_COMMAND=claude CODEX_PROVIDER=native CODEX_EXTRA_ARGS=\"-p\" GEMINI_COMMAND=claude GEMINI_PROVIDER=native GEMINI_EXTRA_ARGS=\"-p\" npx tsx src/index.ts \"REST API de autenticação JWT\" \"Criar endpoints de login, registro e refresh token em Node.js + TypeScript com express e jsonwebtoken\" \"Stack: Node.js 22, TypeScript ESM, in-memory store para demo\")"
+      "Bash(PUMICE_HUB=true CODEX_COMMAND=claude CODEX_PROVIDER=native CODEX_EXTRA_ARGS=\"-p\" GEMINI_COMMAND=claude GEMINI_PROVIDER=native GEMINI_EXTRA_ARGS=\"-p\" npx tsx src/index.ts \"REST API de autenticação JWT\" \"Criar endpoints de login, registro e refresh token em Node.js + TypeScript com express e jsonwebtoken\" \"Stack: Node.js 22, TypeScript ESM, in-memory store para demo\")",
+      "Bash(npm run:*)"
     ]
   }
 }
