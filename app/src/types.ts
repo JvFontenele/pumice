@@ -19,6 +19,26 @@ export interface AgentCardModel {
   goal: string;
 }
 
+export interface ContextBlock {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface FlowStep {
+  id: string;
+  agentId: string;
+  action: string;
+  contextIds: string[];
+}
+
+export interface DevFlow {
+  id: string;
+  name: string;
+  goal: string;
+  steps: FlowStep[];
+}
+
 /** Runtime-only connection status — never persisted. */
 export type RuntimeStatus = "unknown" | "checking" | "ok" | "fail";
 
@@ -35,6 +55,8 @@ export interface ProjectConfig {
   mission: string;
   obsidianVaultPath: string;
   agents: AgentCardModel[];
+  contexts?: ContextBlock[];
+  flows?: DevFlow[];
 }
 
 /** An agent that self-registered with the MCP hub. */

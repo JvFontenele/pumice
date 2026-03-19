@@ -31,7 +31,36 @@ struct AgentConfig {
     model: String,
     command: String,
     goal: String,
+    #[serde(default)]
     status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ContextBlock {
+    id: String,
+    title: String,
+    content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FlowStep {
+    id: String,
+    agent_id: String,
+    action: String,
+    #[serde(default)]
+    context_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct DevFlow {
+    id: String,
+    name: String,
+    goal: String,
+    #[serde(default)]
+    steps: Vec<FlowStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +68,12 @@ struct AgentConfig {
 struct ProjectConfig {
     mission: String,
     obsidian_vault_path: String,
+    #[serde(default)]
     agents: Vec<AgentConfig>,
+    #[serde(default)]
+    contexts: Vec<ContextBlock>,
+    #[serde(default)]
+    flows: Vec<DevFlow>,
 }
 
 #[derive(Clone, Serialize)]
