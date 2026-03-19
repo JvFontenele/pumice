@@ -33,3 +33,12 @@ export interface AgentResult {
   files?: string[];
   risks?: string[];
 }
+
+export interface HubEntry {
+  taskId: string;
+  role: TaskRole;
+  agent: AgentName;
+  success: boolean;
+  output: string;
+  publishedAt: string;
+}

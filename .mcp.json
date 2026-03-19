@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pumice-hub": {
+      "type": "http",
+      "url": "http://127.0.0.1:47821/mcp",
+      "description": "Pumice MCP Hub — inter-agent message bus. Start with PUMICE_HUB=true npm run task."
+    }
+  }
+}

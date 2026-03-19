@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Pumice",
         "width": 1480,
         "height": 940,

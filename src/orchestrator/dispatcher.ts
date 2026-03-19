@@ -4,14 +4,22 @@ import { runCodex } from "../agents/codex.js";
 import { runGemini } from "../agents/gemini.js";
 import { AgentResult, SubTask } from "../types.js";
 import { buildMockOutput } from "../utils/mock.js";
+import { HubClient } from "../hub/client.js";
+import { writeMcpConfig } from "../hub/mcp-config.js";
 
-export async function dispatchTask(task: SubTask): Promise<AgentResult> {
+export async function dispatchTask(
+  task: SubTask,
+  hubClient?: HubClient | null
+): Promise<AgentResult> {
+  const instructions = await buildInstructions(task.instructions, hubClient);
+
   if (task.role === "architect" || task.role === "reviewer") {
     if (config.mockResponses) {
       return buildMockResult("claude", task);
     }
 
-    const result = await runClaude(task.instructions);
+    const mcpConfigPath = hubClient ? await writeMcpConfig(config.hub.url).catch(() => undefined) : undefined;
+    const result = await runClaude(instructions, mcpConfigPath);
     return {
       agent: config.claude.provider === "ollama" ? "ollama" : "claude",
       role: task.role,
@@ -33,7 +41,7 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
       return buildMockResult("codex", task);
     }
 
-    const result = await runCodex(task.instructions);
+    const result = await runCodex(instructions);
     return {
       agent: config.codex.provider === "ollama" ? "ollama" : "codex",
       role: task.role,
@@ -54,7 +62,7 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
     return buildMockResult("gemini", task);
   }
 
-  const result = await runGemini(task.instructions);
+  const result = await runGemini(instructions);
   return {
     agent: config.gemini.provider === "ollama" ? "ollama" : "gemini",
     role: task.role,
@@ -71,6 +79,31 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
           result.stderr
         )
   };
+}
+
+/**
+ * Fetches the context summary from the hub and prepends it to the base instructions.
+ * Falls back to the original instructions if the hub is unavailable.
+ */
+async function buildInstructions(base: string, hub?: HubClient | null): Promise<string> {
+  if (!hub) return base;
+
+  try {
+    const summary = await hub.getContextSummary();
+    if (!summary || summary === "No results published yet.") return base;
+
+    return [
+      "## Context from previous pipeline stages",
+      "",
+      summary,
+      "",
+      "---",
+      "",
+      base
+    ].join("\n");
+  } catch {
+    return base;
+  }
 }
 
 function buildMockResult(agent: AgentResult["agent"], task: SubTask): AgentResult {

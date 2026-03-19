@@ -10,13 +10,17 @@ export async function runCommand(
   command: string,
   args: string[],
   cwd?: string,
-  env?: Record<string, string>
+  env?: Record<string, string>,
+  input?: string
 ): Promise<CommandResult> {
   try {
     const result = await execa(command, args, {
       cwd,
-      shell: true,
-      env
+      shell: false,
+      env,
+      // When input is provided, the prompt is piped via stdin instead of a CLI arg.
+      // This avoids cmd.exe splitting multi-line prompts at newlines on Windows.
+      ...(input !== undefined ? { input } : {})
     });
 
     return {

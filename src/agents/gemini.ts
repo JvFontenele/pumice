@@ -7,6 +7,6 @@ export async function runGemini(prompt: string) {
     return runOllama(prompt, config.gemini.model);
   }
 
-  const args = [...config.gemini.extraArgs, prompt];
-  return runCommand(config.gemini.command, args);
+  // Prompt is passed via stdin to avoid shell newline splitting on Windows.
+  return runCommand(config.gemini.command, config.gemini.extraArgs, undefined, undefined, prompt);
 }

@@ -12,7 +12,6 @@ export async function runCodex(prompt: string) {
     }
   }
 
-  args.push(prompt);
-
-  return runCommand(config.codex.command, args);
+  // Prompt is passed via stdin to avoid shell newline splitting on Windows.
+  return runCommand(config.codex.command, args, undefined, undefined, prompt);
 }

@@ -110,9 +110,12 @@ async fn run_task(
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::task;
 
-    // Pumice root = CWD when launched via `tauri dev` or the installed app dir.
-    let pumice_root = std::env::current_dir()
-        .map_err(|e| format!("Cannot determine working directory: {}", e))?;
+    // CARGO_MANIFEST_DIR is src-tauri/ at compile time; its parent is the project root
+    // where package.json, src/index.ts, and .env live.
+    let pumice_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     // Override env vars from the saved project config when available.
     let env_overrides = load_project_env_overrides(&project_path);

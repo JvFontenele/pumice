@@ -9,22 +9,28 @@ export const config = {
   failFast: process.env.PUMICE_FAIL_FAST === "true",
   ollamaCommand: process.env.OLLAMA_COMMAND ?? "ollama",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
+  hub: {
+    enabled: process.env.PUMICE_HUB === "true",
+    port: parseInt(process.env.PUMICE_HUB_PORT ?? "47821", 10),
+    url: "" // populated at runtime by transport.ts after bind
+  },
   claude: {
     provider: parseProvider(process.env.CLAUDE_PROVIDER, "native"),
     command: process.env.CLAUDE_COMMAND ?? "claude",
-    model: process.env.CLAUDE_MODEL ?? "qwen3.5",
+    // Empty string = no --model flag; Claude CLI uses its configured default model
+    model: process.env.CLAUDE_MODEL ?? "",
     extraArgs: parseArgs(process.env.CLAUDE_EXTRA_ARGS ?? "-p")
   },
   codex: {
     provider: parseProvider(process.env.CODEX_PROVIDER, "native"),
     command: process.env.CODEX_COMMAND ?? "codex",
-    model: process.env.CODEX_MODEL ?? "gpt-oss:20b",
+    model: process.env.CODEX_MODEL ?? "",
     extraArgs: parseArgs(process.env.CODEX_EXTRA_ARGS ?? "")
   },
   gemini: {
     provider: parseProvider(process.env.GEMINI_PROVIDER, "native"),
     command: process.env.GEMINI_COMMAND ?? "gemini",
-    model: process.env.GEMINI_MODEL ?? "qwen3.5",
+    model: process.env.GEMINI_MODEL ?? "",
     extraArgs: parseArgs(process.env.GEMINI_EXTRA_ARGS ?? "")
   }
 };

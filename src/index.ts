@@ -6,6 +6,8 @@ import { dispatchTask } from "./orchestrator/dispatcher.js";
 import { buildReview } from "./orchestrator/reviewer.js";
 import { ensureDir, saveTextFile } from "./utils/fs.js";
 import { MasterTask } from "./types.js";
+import { startHub, stopHub } from "./hub/transport.js";
+import { createHubClient, HubClient } from "./hub/client.js";
 
 async function main() {
   const title = process.argv[2] ?? "New feature";
@@ -19,6 +21,18 @@ async function main() {
   await ensureDir(config.workspaceDir);
   await ensureDir(path.join(config.workspaceDir, "tasks"));
   await ensureDir(path.join(config.workspaceDir, "outputs"));
+
+  // ── Start MCP Hub (opt-in via PUMICE_HUB=true) ─────────────────────────────
+  let hubClient: HubClient | null = null;
+  if (config.hub.enabled) {
+    try {
+      const hubUrl = await startHub();
+      hubClient = createHubClient(hubUrl);
+      console.log(`[pumice:hub] started at ${hubUrl}`);
+    } catch (err) {
+      console.log(`[pumice:hub] failed to start, continuing without hub: ${err}`);
+    }
+  }
 
   const plan = createPlan(task);
   const results = [];
@@ -43,7 +57,7 @@ async function main() {
       ].join("\n")
     );
 
-    const result = await dispatchTask(subTask);
+    const result = await dispatchTask(subTask, hubClient);
     results.push(result);
 
     await saveTextFile(
@@ -57,6 +71,22 @@ async function main() {
 
     if (!result.success) {
       console.log(`[pumice:error] ${result.output.split("\n")[0]}`);
+    }
+
+    // Publish result to hub so subsequent agents can read it
+    if (hubClient) {
+      try {
+        await hubClient.publish({
+          taskId: result.taskId,
+          role: result.role,
+          agent: result.agent,
+          success: result.success,
+          output: result.output
+        });
+        console.log(`[pumice:hub] published ${result.role} (${result.taskId})`);
+      } catch (err) {
+        console.log(`[pumice:hub] publish failed (non-fatal): ${err}`);
+      }
     }
 
     if (config.failFast && !result.success) {
@@ -89,6 +119,16 @@ ${review.summary}
 
   console.log(`[pumice:done] ${review.success ? "all stages complete" : "completed with errors"}`);
   console.log(review.summary);
+
+  // ── Stop hub ────────────────────────────────────────────────────────────────
+  if (config.hub.enabled && hubClient) {
+    try {
+      await stopHub();
+      console.log("[pumice:hub] stopped");
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function slugify(value: string) {
