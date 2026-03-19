@@ -66,6 +66,19 @@ export function createDb(dbPath?: string): Database.Database {
       partial     INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS run_steps (
+      id           TEXT PRIMARY KEY,
+      run_id       TEXT NOT NULL REFERENCES runs(id),
+      step_id      TEXT NOT NULL,
+      attempt      INTEGER NOT NULL DEFAULT 1,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      command_id   TEXT REFERENCES commands(id),
+      started_at   TEXT,
+      completed_at TEXT,
+      error        TEXT,
+      UNIQUE(run_id, step_id)
+    );
+
     CREATE TABLE IF NOT EXISTS context_blocks (
       id      TEXT PRIMARY KEY,
       source  TEXT NOT NULL,

@@ -110,6 +110,24 @@ export const ProjectProfileSchema = z.object({
 })
 export type ProjectProfile = z.infer<typeof ProjectProfileSchema>
 
+// ─── RunStep ──────────────────────────────────────────────────────────────────
+
+export const RunStepStatusSchema = z.enum(['pending', 'running', 'completed', 'failed'])
+export type RunStepStatus = z.infer<typeof RunStepStatusSchema>
+
+export const RunStepSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  stepId: z.string().min(1),
+  attempt: z.number().int().min(1),
+  status: RunStepStatusSchema,
+  commandId: z.string().uuid().nullable(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  error: z.string().nullable(),
+})
+export type RunStep = z.infer<typeof RunStepSchema>
+
 // ─── Events (SSE/WebSocket) ───────────────────────────────────────────────────
 
 export const EventTypeSchema = z.enum([
@@ -122,6 +140,10 @@ export const EventTypeSchema = z.enum([
   'response.final',
   'run.started',
   'run.finished',
+  'run.step_started',
+  'run.step_completed',
+  'run.step_failed',
+  'run.step_retrying',
 ])
 export type EventType = z.infer<typeof EventTypeSchema>
 
