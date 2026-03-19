@@ -3,9 +3,10 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { connectSSE, useEventsStore } from '../store/events'
 
 const NAV = [
-  { to: '/agents', label: 'Agents', icon: '◈' },
-  { to: '/runs',   label: 'Runs',   icon: '▶' },
-  { to: '/events', label: 'Events', icon: '◉' },
+  { to: '/agents',  label: 'Agents',  icon: '◈' },
+  { to: '/runs',    label: 'Runs',    icon: '▶' },
+  { to: '/context', label: 'Context', icon: '◧' },
+  { to: '/events',  label: 'Events',  icon: '◉' },
 ]
 
 export function Layout() {
