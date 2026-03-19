@@ -15,12 +15,24 @@
     "doctor": "tsx src/doctor.ts"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/api": "^2.8.0",
     "@tauri-apps/plugin-dialog": "^2.4.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "execa": "^9.5.2",
+    "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
