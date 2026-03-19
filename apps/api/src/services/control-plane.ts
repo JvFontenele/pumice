@@ -36,13 +36,21 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+/** Agents that haven't heartbeated in this window are considered offline. */
+const HEARTBEAT_TIMEOUT_MS = 60_000
+
 function mapAgent(row: AgentRow): Agent {
+  const isStale =
+    row.last_seen !== null &&
+    row.status !== 'offline' &&
+    Date.now() - new Date(row.last_seen).getTime() > HEARTBEAT_TIMEOUT_MS
+
   return AgentSchema.parse({
     id: row.id,
     name: row.name,
     provider: row.provider,
     capabilities: JSON.parse(row.capabilities) as string[],
-    status: row.status,
+    status: isStale ? 'offline' : row.status,
     lastSeen: row.last_seen,
   })
 }
