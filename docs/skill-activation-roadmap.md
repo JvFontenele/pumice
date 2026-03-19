@@ -2,6 +2,25 @@
 
 Este documento define quando ativar cada skill e o que deve ser feito em cada sprint para acelerar a entrega do Pumice com qualidade tecnica.
 
+## Status atual
+
+1. Sprint concluida: `S0 - Foundation`
+2. Sprint entregue: `S3 - Fluxos Dinamicos`
+3. Sprint entregue: `S4 - Multi-provider Robusto`
+4. Sprint 1 segue parcial: backend principal entregue, UI operacional ainda pendente
+5. Proxima sprint recomendada: `S2 - Context Engine + Obsidian`
+
+## Recomendacao de sequencia
+
+1. Seguir para `S2 - Context Engine + Obsidian`.
+2. Deixar `S5 - Hardening e Produto` para depois de fechar contexto e UX operacional principal.
+
+Motivo:
+
+1. O Pumice ja tem foundation, flow engine e adapters multi-provider.
+2. O maior gap de produto agora e contexto persistente e composicao de memoria.
+3. Hardening antes de contexto estabiliza uma plataforma ainda incompleta no que e mais diferenciador.
+
 ## Como usar este roteiro
 
 1. Antes de iniciar uma tarefa, identifique em qual sprint/epic ela se encaixa.
@@ -141,6 +160,17 @@ Substituir pipeline fixa por fluxos definidos pelo usuario.
 2. Falhas ficam rastreaveis por step e agente responsavel.
 3. Operador consegue ajustar fluxo sem alterar codigo backend.
 
+### Status
+
+1. Entregue no backend.
+2. Evidencias:
+   - `run_steps` table
+   - `advanceDag()`
+   - `POST /flows/:id/runs`
+   - `GET /runs/:id`
+   - retries e falha terminal por step
+3. Suite atual: 52 testes reportados no fechamento da sprint.
+
 ## Sprint 4 - Multi-provider Robusto
 
 ### Objetivo
@@ -171,6 +201,21 @@ Adicionar novos conectores sem alterar o nucleo do produto.
 1. Novo conector entra sem mexer na UI central.
 2. Todos os adapters passam no teste de contrato.
 3. Falhas sao contidas no adapter com retry/backoff.
+
+### Status
+
+1. Entregue no backend/adapters.
+2. Evidencias:
+   - `HttpAdapter`
+   - `BaseAgentRunner`
+   - `withTimeout`
+   - `withRetry`
+   - `ClaudeRunner`
+   - `CodexRunner`
+   - `GeminiRunner`
+   - `OllamaRunner`
+   - `conformance.test.ts`
+3. Suite atual: 15 testes de conformidade reportados para adapters/runners.
 
 ## Sprint 5 - Hardening e Produto
 

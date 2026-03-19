@@ -2,6 +2,14 @@
 
 Checklist operacional para executar o roadmap em ciclos semanais, com foco em entrega incremental e criterios claros de conclusao.
 
+## Status atual
+
+1. `S0 - Foundation`: concluida com gate `PASS`
+2. `S3 - Fluxos Dinamicos`: entregue no backend
+3. `S4 - Multi-provider Robusto`: entregue no backend/adapters
+4. `S1 - Operacao Multiagente Minima`: parcial, com UI operacional ainda pendente
+5. Proxima sprint recomendada: `S2 - Context Engine + Obsidian`
+
 ## Como usar
 
 1. Cada semana tem um objetivo principal e uma lista de entregas verificaveis.
@@ -149,32 +157,40 @@ Checklist operacional para executar o roadmap em ciclos semanais, com foco em en
 
 ### Modelagem de fluxo
 
-- [ ] Definir schema de step/dependencia/politica por fluxo.
-- [ ] Definir politicas de execucao: serial, paralelo, misto.
-- [ ] Definir regras de retry e fallback por step.
+- [x] Definir schema de step/dependencia/politica por fluxo.
+- [x] Definir politicas de execucao: serial, paralelo, misto.
+- [x] Definir regras de retry e fallback por step.
 
 ### Executor DAG
 
-- [ ] Implementar executor DAG simples.
-- [ ] Implementar bloqueio de steps por dependencia nao concluida.
-- [ ] Implementar rastreio de erro por step/agente.
+- [x] Implementar executor DAG simples.
+- [x] Implementar bloqueio de steps por dependencia nao concluida.
+- [x] Implementar rastreio de erro por step/agente.
 
 ### UI de fluxo
 
 - [ ] Criar editor de fluxo (steps, dependencias, papeis).
 - [ ] Permitir salvar/editar/duplicar fluxo.
-- [ ] Exibir timeline por step em execucao.
+- [x] Exibir timeline por step em execucao.
 
 ### Testes
 
-- [ ] Teste de execucao ponta a ponta com dependencias.
-- [ ] Teste de retry/fallback em falha de step.
-- [ ] Teste de consistencia de timeline.
+- [x] Teste de execucao ponta a ponta com dependencias.
+- [x] Teste de retry/fallback em falha de step.
+- [x] Teste de consistencia de timeline.
 
 ### Gate de encerramento
 
-- [ ] Fluxo customizado executa sem etapas hardcoded.
-- [ ] Falhas rastreadas com causa e responsavel.
+- [x] Fluxo customizado executa sem etapas hardcoded.
+- [x] Falhas rastreadas com causa e responsavel.
+
+Resultado registrado:
+
+1. `run_steps` table entregue.
+2. `advanceDag()` entregue.
+3. `POST /flows/:id/runs` entregue.
+4. `GET /runs/:id` entregue.
+5. Suite reportada no fechamento: `52` testes.
 
 ## Semana 5 - Multi-provider Robusto (Sprint 4)
 
@@ -184,29 +200,37 @@ Checklist operacional para executar o roadmap em ciclos semanais, com foco em en
 
 ### SDK e adapters
 
-- [ ] Consolidar `agent-sdk` com contrato unico.
-- [ ] Implementar adapter Claude CLI.
-- [ ] Implementar adapter Codex CLI.
-- [ ] Implementar adapter Gemini CLI.
-- [ ] Implementar adapter Ollama generico.
+- [x] Consolidar `agent-sdk` com contrato unico.
+- [x] Implementar adapter Claude CLI.
+- [x] Implementar adapter Codex CLI.
+- [x] Implementar adapter Gemini CLI.
+- [x] Implementar adapter Ollama generico.
 
 ### Confiabilidade
 
-- [ ] Implementar timeout por comando.
-- [ ] Implementar cancelamento por comando.
-- [ ] Implementar retry com backoff para desconexao.
-- [ ] Garantir isolamento: erro em adapter nao derruba control plane.
+- [x] Implementar timeout por comando.
+- [x] Implementar cancelamento por comando.
+- [x] Implementar retry com backoff para desconexao.
+- [x] Garantir isolamento: erro em adapter nao derruba control plane.
 
 ### Conformance
 
-- [ ] Criar suite de testes de conformidade de adapter.
-- [ ] Rodar mesma suite para todos os conectores.
+- [x] Criar suite de testes de conformidade de adapter.
+- [x] Rodar mesma suite para todos os conectores.
 - [ ] Publicar relatorio de conformidade por provider.
 
 ### Gate de encerramento
 
-- [ ] Novo adapter entra sem alterar UI central.
-- [ ] Todos os adapters passam nos testes de contrato.
+- [x] Novo adapter entra sem alterar UI central.
+- [x] Todos os adapters passam nos testes de contrato.
+
+Resultado registrado:
+
+1. `HttpAdapter` entregue.
+2. `BaseAgentRunner` entregue.
+3. `withTimeout` e `withRetry` entregues.
+4. Runners `Claude`, `Codex`, `Gemini` e `Ollama` entregues.
+5. `conformance.test.ts` com `15` testes reportados.
 
 ## Semana 6 - Hardening e Produto (Sprint 5)
 
