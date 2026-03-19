@@ -1,80 +1,97 @@
 # Pumice
 
-Pumice is a starter kit for coordinating multiple AI coding agents as a development team, with Obsidian as shared memory.
+Pumice is a **TMUX + Agent Teams** desktop orchestrator.
+It keeps multiple AI agents connected, coordinated, and observable in one clean UI.
 
-## Stack
+## Product Direction
 
-- Node.js + TypeScript orchestration CLI
-- Provider-aware Claude, Codex, and Gemini adapters
-- Self-hosted execution via Ollama
-- React + Vite management UI
-- Tauri 2 desktop shell
-- Obsidian vault for durable notes
-- Workspace folders for task outputs
+Pumice is no longer a fixed Architect/Backend/QA/Docs pipeline.
 
-## Quick start
+The target product is:
 
-1. Copy `.env.example` to `.env`.
-2. Run `npm install`.
-3. Run `npm run doctor` to verify the configured CLIs and Ollama connectivity.
-4. Run `npm run dev -- "Task title" "Task description" "Optional context"` for the CLI flow.
-5. Run `npm run app:dev` for the management UI in the browser.
-6. Run `npm run desktop:dev` for the Tauri shell once the Rust toolchain is compatible.
+- Dynamic agent teams (Claude-first, but not Claude-only)
+- Live orchestration via chat (send command to one agent or all)
+- Shared context via MCP hub
+- Project memory in Obsidian (rules, decisions, development notes)
+- UI focused on administration, visibility, and control
 
-If you want to validate the orchestration flow before wiring all external CLIs, set `PUMICE_MOCK_RESPONSES=true` in `.env`.
+## Core Experience
 
-## Self-hosted with Ollama
+1. User selects a repository and an Obsidian vault.
+2. Agents connect/register to the hub.
+3. User creates contexts and development flows.
+4. User orchestrates work in chat:
+   - send command to a specific agent
+   - broadcast command to all agents
+5. UI shows:
+   - connected agents
+   - who is working now
+   - command/response timeline
 
-Pumice can run agents against Ollama-backed models.
+## Architecture (Current Direction)
 
-- `CLAUDE_PROVIDER=ollama` uses Claude Code against Ollama's Anthropic-compatible API.
-- `CODEX_PROVIDER=ollama` runs Codex in OSS mode with a local Ollama model.
-- `GEMINI_PROVIDER=ollama` uses `ollama run <model>` as a local generic agent for QA/docs style tasks.
+- `src/`: orchestration core, providers, MCP hub, CLI/runtime
+- `app/`: React UI (Studio) for agents, flows, context, and chat ops
+- `src-tauri/`: desktop shell and native integrations
+- `obsidian-vault/`: durable knowledge base for project context
 
-Recommended setup:
+## Agent Model Strategy
 
-1. Install and start Ollama locally.
-2. Pull the models you want to use, for example `qwen3.5` and `gpt-oss:20b`.
-3. Keep `OLLAMA_BASE_URL=http://localhost:11434` unless your Ollama server is remote.
-4. For Claude Code, keep `CLAUDE_COMMAND=claude` and `CLAUDE_PROVIDER=ollama`.
-5. For Codex, keep `CODEX_COMMAND=codex` and `CODEX_PROVIDER=ollama`.
-6. Run `npm run doctor` before the first real task.
+Pumice supports multiple providers/CLIs. Claude is a primary path, but not exclusive.
 
-Claude Code path used by Pumice:
+Supported direction:
 
-- Pumice configures `ANTHROPIC_AUTH_TOKEN=ollama`, `ANTHROPIC_API_KEY=""`, and `ANTHROPIC_BASE_URL=http://localhost:11434` when `CLAUDE_PROVIDER=ollama`.
-- This follows Ollama's manual Claude Code setup and lets you keep using the `claude` CLI with a local model such as `qwen3.5`.
+- Claude CLI
+- Codex CLI
+- Gemini CLI
+- Local/self-hosted engines (e.g. Ollama)
+- Future providers via adapter pattern
 
-Codex path used by Pumice:
+## Obsidian as Source of Context
 
-- Pumice adds `--oss -m <CODEX_MODEL>` when `CODEX_PROVIDER=ollama`.
-- This follows Ollama's Codex integration for local `gpt-oss` models.
+Obsidian vault is the long-term memory for:
 
-Reference docs:
+- project rules and constraints
+- architectural decisions
+- implementation rationale
+- handoff notes between agents
 
-- [Ollama Claude Code integration](https://docs.ollama.com/integrations/claude-code)
-- [Ollama Codex integration](https://docs.ollama.com/integrations/codex)
+Recommended vault structure is documented in:
 
-## Desktop architecture
+- [obsidian-vault/README.md](obsidian-vault/README.md)
+- [docs/memory/README.md](docs/memory/README.md)
 
-The repository is now split into three layers:
+## Easy Integration (Quick Start)
 
-- `src/`: orchestration core and CLI flows
-- `app/`: React management interface for selecting a repo and configuring the squad
-- `src-tauri/`: desktop shell and native commands such as local project inspection
+1. Install dependencies:
+   - `npm install`
+2. Configure environment:
+   - copy `.env.example` to `.env`
+3. Start UI:
+   - `npm run app:dev`
+4. Start desktop shell:
+   - `npm run desktop:dev`
 
-The first management screen already supports:
+Optional mock mode (without external CLIs):
 
-- opening a local project folder
-- inspecting whether Git, docs, `package.json`, and an Obsidian vault are present
-- editing mission, vault path, and agent roles/providers/models/commands/goals
-- saving and loading squad configuration from `.pumice/project.json` in the selected repository
-- showing the execution rail from intake to docs
+- `PUMICE_MOCK_RESPONSES=true`
 
-## Current scope
+## Environment Flags
 
-This version creates a sequential plan, dispatches each subtask to the configured provider, writes task definitions to `workspace/tasks`, writes outputs to `workspace/outputs`, and stores a summary note in `obsidian-vault`.
+- `PUMICE_HUB=true|false`: enables shared MCP hub
+- `PUMICE_HUB_PORT=47821`: hub port
+- `PUMICE_PROJECT_DIR=<path>`: selected project path for agent execution
 
-## Current blocker
+## Design Principles
 
-The React app builds successfully. The Tauri shell files are in place, but the local Rust toolchain in this machine is `rustc 1.85.0`, while the currently resolved Tauri dependency graph pulls crates that require Rust 1.88+. If you want the desktop shell compiling locally right now, the next practical step is updating Rust before running `npm run desktop:dev`.
+- Keep UI clean and operator-focused.
+- Prefer dynamic flows over hard-coded pipelines.
+- Treat context as first-class (Obsidian + MCP).
+- Make new agent integration low-friction.
+- Expose operational state clearly (connected, busy, responding).
+
+## Documentation Index
+
+- [Product direction](docs/product-direction.md)
+- [Integration quickstart](docs/integration-quickstart.md)
+- [Memory guide](docs/memory/README.md)
