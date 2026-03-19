@@ -23,7 +23,11 @@ async function main() {
   const plan = createPlan(task);
   const results = [];
 
+  console.log(`[pumice] Pipeline: ${plan.map(t => t.role).join(" → ")}`);
+
   for (const subTask of plan) {
+    console.log(`[pumice:stage] ${subTask.role} — ${subTask.title}`);
+
     await saveTextFile(
       path.join(config.workspaceDir, "tasks", `${subTask.id}.md`),
       [
@@ -47,7 +51,16 @@ async function main() {
       `# ${subTask.title}\n\n${result.output}`
     );
 
+    console.log(
+      `[pumice:result] ${subTask.role} — ${result.success ? "ok" : "error"}`
+    );
+
+    if (!result.success) {
+      console.log(`[pumice:error] ${result.output.split("\n")[0]}`);
+    }
+
     if (config.failFast && !result.success) {
+      console.log("[pumice:abort] Stopping due to PUMICE_FAIL_FAST=true");
       break;
     }
   }
@@ -74,6 +87,7 @@ ${review.summary}
 `
   );
 
+  console.log(`[pumice:done] ${review.success ? "all stages complete" : "completed with errors"}`);
   console.log(review.summary);
 }
 
