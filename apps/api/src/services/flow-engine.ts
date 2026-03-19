@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { FlowSchema, RunSchema, RunStepSchema, type Flow, type FlowStep, type FlowPolicy, type Run, type RunStep } from '@pumice/types'
+import { FlowSchema, FlowStepSchema, RunSchema, RunStepSchema, type Flow, type FlowStep, type FlowPolicy, type Run, type RunStep } from '@pumice/types'
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
@@ -16,6 +16,11 @@ type StepRow = {
   started_at: string | null
   completed_at: string | null
   error: string | null
+}
+
+export type DagTransition = {
+  run: Run
+  startedSteps: RunStep[]
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -64,6 +69,7 @@ export function createFlow(
   db: Database.Database,
   payload: { name: string; goal: string; steps: FlowStep[]; policy: FlowPolicy }
 ): Flow {
+  validateFlowDefinition(payload.steps)
   const id = randomUUID()
   db.prepare(
     `INSERT INTO flows (id, name, goal, steps, policy) VALUES (?, ?, ?, ?, ?)`
@@ -84,7 +90,7 @@ export function getFlowById(db: Database.Database, flowId: string): Flow | null 
 
 // ─── Run management ───────────────────────────────────────────────────────────
 
-export function startRun(db: Database.Database, flowId: string): Run {
+export function startRun(db: Database.Database, flowId: string): DagTransition {
   const flowRow = db.prepare(`SELECT * FROM flows WHERE id = ?`).get(flowId) as FlowRow | undefined
   if (!flowRow) throw new Error(`Flow not found: ${flowId}`)
 
@@ -104,9 +110,12 @@ export function startRun(db: Database.Database, flowId: string): Run {
   }
 
   // Kick off first wave of commands
-  advanceDag(db, runId)
+  const transition = advanceDag(db, runId)
 
-  return parseRun(db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow)
+  return {
+    run: transition.run,
+    startedSteps: transition.startedSteps,
+  }
 }
 
 export function getRunWithTimeline(
@@ -129,10 +138,14 @@ export function getRunTimeline(db: Database.Database, runId: string): RunStep[] 
 
 // ─── DAG executor ─────────────────────────────────────────────────────────────
 
-export function advanceDag(db: Database.Database, runId: string): void {
+export function advanceDag(db: Database.Database, runId: string): DagTransition {
   const runRow = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined
-  if (!runRow) return
-  if (['completed', 'failed', 'cancelled'].includes(runRow.status)) return
+  if (!runRow) {
+    throw new Error(`Run not found: ${runId}`)
+  }
+  if (['completed', 'failed', 'cancelled'].includes(runRow.status)) {
+    return { run: parseRun(runRow), startedSteps: [] }
+  }
 
   const flowRow = db.prepare(`SELECT * FROM flows WHERE id = ?`).get(runRow.flow_id) as FlowRow
   const flow = parseFlow(flowRow)
@@ -146,13 +159,13 @@ export function advanceDag(db: Database.Database, runId: string): void {
   // Check terminal: all completed
   if (flow.steps.every((s) => stepStatus.get(s.id) === 'completed')) {
     db.prepare(`UPDATE runs SET status = ?, finished_at = ? WHERE id = ?`).run('completed', nowIso(), runId)
-    return
+    return { run: getRunOrThrow(db, runId), startedSteps: [] }
   }
 
   // Check terminal: any hard-failed (retries exhausted)
   if (flow.steps.some((s) => stepStatus.get(s.id) === 'failed')) {
     db.prepare(`UPDATE runs SET status = ?, finished_at = ? WHERE id = ?`).run('failed', nowIso(), runId)
-    return
+    return { run: getRunOrThrow(db, runId), startedSteps: [] }
   }
 
   // Find steps ready to execute (pending + all dependencies completed)
@@ -164,9 +177,13 @@ export function advanceDag(db: Database.Database, runId: string): void {
   // serial policy: execute one at a time; parallel/mixed: all ready at once
   const toExecute = flow.policy === 'serial' ? readySteps.slice(0, 1) : readySteps
 
+  const startedSteps: RunStep[] = []
+
   for (const step of toExecute) {
-    queueStepCommand(db, runId, step, flow)
+    startedSteps.push(queueStepCommand(db, runId, step, flow))
   }
+
+  return { run: getRunOrThrow(db, runId), startedSteps }
 }
 
 function queueStepCommand(
@@ -174,7 +191,7 @@ function queueStepCommand(
   runId: string,
   step: FlowStep,
   flow: Flow
-): void {
+): RunStep {
   const commandId = randomUUID()
   const now = nowIso()
   const target = step.agentId ?? 'broadcast'
@@ -199,6 +216,59 @@ function queueStepCommand(
     `UPDATE run_steps SET status = 'running', command_id = ?, started_at = ?
      WHERE run_id = ? AND step_id = ? AND status = 'pending'`
   ).run(commandId, now, runId, step.id)
+
+  const stepRow = db.prepare(
+    `SELECT * FROM run_steps WHERE run_id = ? AND step_id = ?`
+  ).get(runId, step.id) as StepRow | undefined
+
+  if (!stepRow) {
+    throw new Error(`Run step not found after queueing: ${step.id}`)
+  }
+
+  return parseStep(stepRow)
+}
+
+function validateFlowDefinition(steps: FlowStep[]) {
+  const parsedSteps = steps.map((step) => FlowStepSchema.parse(step))
+  const stepIds = new Set(parsedSteps.map((step) => step.id))
+
+  if (stepIds.size !== parsedSteps.length) {
+    throw new Error('Flow contains duplicate step ids')
+  }
+
+  for (const step of parsedSteps) {
+    for (const depId of step.dependsOn) {
+      if (!stepIds.has(depId)) {
+        throw new Error(`Flow step "${step.id}" depends on unknown step "${depId}"`)
+      }
+    }
+  }
+
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const stepMap = new Map(parsedSteps.map((step) => [step.id, step]))
+
+  function visit(stepId: string) {
+    if (visited.has(stepId)) return
+    if (visiting.has(stepId)) {
+      throw new Error(`Flow contains a dependency cycle at "${stepId}"`)
+    }
+
+    visiting.add(stepId)
+    const step = stepMap.get(stepId)
+    if (!step) return
+
+    for (const depId of step.dependsOn) {
+      visit(depId)
+    }
+
+    visiting.delete(stepId)
+    visited.add(stepId)
+  }
+
+  for (const step of parsedSteps) {
+    visit(step.id)
+  }
 }
 
 // ─── Response hooks ───────────────────────────────────────────────────────────
@@ -207,7 +277,7 @@ function queueStepCommand(
  * Called after a final successful response is saved.
  * Returns the runId if this command belonged to a flow step, null otherwise.
  */
-export function onCommandCompleted(db: Database.Database, commandId: string): string | null {
+export function onCommandCompleted(db: Database.Database, commandId: string): DagTransition | null {
   const stepRow = db.prepare(
     `SELECT * FROM run_steps WHERE command_id = ?`
   ).get(commandId) as StepRow | undefined
@@ -217,8 +287,7 @@ export function onCommandCompleted(db: Database.Database, commandId: string): st
     `UPDATE run_steps SET status = 'completed', completed_at = ? WHERE command_id = ?`
   ).run(nowIso(), commandId)
 
-  advanceDag(db, stepRow.run_id)
-  return stepRow.run_id
+  return advanceDag(db, stepRow.run_id)
 }
 
 /**
@@ -230,7 +299,7 @@ export function onCommandFailed(
   db: Database.Database,
   commandId: string,
   error: string
-): { runId: string; retrying: boolean } | null {
+): (DagTransition & { retrying: boolean }) | null {
   const stepRow = db.prepare(
     `SELECT * FROM run_steps WHERE command_id = ?`
   ).get(commandId) as StepRow | undefined
@@ -250,8 +319,8 @@ export function onCommandFailed(
        WHERE command_id = ?`
     ).run(stepRow.attempt + 1, error, commandId)
 
-    advanceDag(db, stepRow.run_id)
-    return { runId: stepRow.run_id, retrying: true }
+    const transition = advanceDag(db, stepRow.run_id)
+    return { ...transition, retrying: true }
   }
 
   // No more retries: hard fail
@@ -259,6 +328,14 @@ export function onCommandFailed(
     `UPDATE run_steps SET status = 'failed', error = ?, completed_at = ? WHERE command_id = ?`
   ).run(error, nowIso(), commandId)
 
-  advanceDag(db, stepRow.run_id)
-  return { runId: stepRow.run_id, retrying: false }
+  const transition = advanceDag(db, stepRow.run_id)
+  return { ...transition, retrying: false }
+}
+
+function getRunOrThrow(db: Database.Database, runId: string): Run {
+  const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as RunRow | undefined
+  if (!row) {
+    throw new Error(`Run not found: ${runId}`)
+  }
+  return parseRun(row)
 }

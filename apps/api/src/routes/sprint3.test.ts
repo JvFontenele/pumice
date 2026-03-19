@@ -2,20 +2,39 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type Database from 'better-sqlite3'
 import { buildServer } from '../server'
 import { createDb } from '../db/setup'
-import type { Run, RunStep } from '@pumice/types'
+import type { PumiceEvent, Run, RunStep } from '@pumice/types'
+import { subscribeToEvents } from './events'
 
 type FlowBody = { flow: { id: string; name: string; steps: unknown[] } }
 type RunBody = { run: Run }
 type RunDetail = { run: Run; steps: RunStep[] }
 
+function findLastEvent(events: PumiceEvent[], type: PumiceEvent['type']) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event.type === type) {
+      return event
+    }
+  }
+
+  return undefined
+}
+
 describe('Sprint 3 — Dynamic Flows', () => {
   let db: Database.Database
+  let capturedEvents: PumiceEvent[]
+  let unsubscribe: (() => void) | null
 
   beforeEach(() => {
     db = createDb(':memory:')
+    capturedEvents = []
+    unsubscribe = subscribeToEvents((event) => {
+      capturedEvents.push(event)
+    })
   })
 
   afterEach(() => {
+    unsubscribe?.()
     db.close()
   })
 
@@ -166,6 +185,9 @@ describe('Sprint 3 — Dynamic Flows', () => {
     const runningSteps = detail.steps.filter((s) => s.status === 'running')
     expect(runningSteps).toHaveLength(3)
     expect(runningSteps.every((s) => s.commandId !== null)).toBe(true)
+
+    const startedEvents = capturedEvents.filter((event) => event.type === 'run.step_started')
+    expect(startedEvents).toHaveLength(3)
   })
 
   it('parallel flow with dependency: dependent step waits', async () => {
@@ -258,6 +280,11 @@ describe('Sprint 3 — Dynamic Flows', () => {
     expect(step.status).toBe('failed')
     expect(step.error).toBe('timeout')
     expect(detail.run.status).toBe('failed')
+
+    const failedCommand = db
+      .prepare(`SELECT status FROM commands WHERE id = ?`)
+      .get(cmdId) as { status: string }
+    expect(failedCommand.status).toBe('failed')
   })
 
   it('retry: succeeds on second attempt', async () => {
@@ -296,6 +323,9 @@ describe('Sprint 3 — Dynamic Flows', () => {
     detail = await getRun(app, run.id)
     expect(detail.run.status).toBe('completed')
     expect(detail.steps[0].status).toBe('completed')
+
+    const finishedEvent = findLastEvent(capturedEvents, 'run.finished')
+    expect(finishedEvent?.payload.status).toBe('completed')
   })
 
   it('GET /runs/:runId returns 404 for unknown run', async () => {
@@ -314,5 +344,74 @@ describe('Sprint 3 — Dynamic Flows', () => {
     const app = buildServer({ db })
     const res = await app.inject({ method: 'POST', url: '/flows/nonexistent/runs' })
     expect(res.statusCode).toBe(404)
+  })
+
+  it('emits run.finished when retries are exhausted', async () => {
+    const app = buildServer({ db })
+    const agentId = await registerAgent(app, 'Claude')
+
+    const flow = await createFlow(app, {
+      name: 'Failing flow',
+      goal: 'terminal failure',
+      policy: 'serial',
+      steps: [
+        {
+          id: 'fails',
+          role: 'worker',
+          agentId,
+          dependsOn: [],
+          retryPolicy: { maxRetries: 0, backoffMs: 0 },
+        },
+      ],
+    })
+
+    const run = await startRun(app, flow.id)
+    const detail = await getRun(app, run.id)
+    const cmdId = detail.steps[0].commandId!
+
+    await app.inject({ method: 'GET', url: `/agents/${agentId}/commands` })
+    await failCommand(app, cmdId, agentId, 'fatal')
+
+    const finishedEvent = findLastEvent(capturedEvents, 'run.finished')
+    expect(finishedEvent?.payload.status).toBe('failed')
+  })
+
+  it('rejects a flow with unknown dependency', async () => {
+    const app = buildServer({ db })
+    const agentId = await registerAgent(app, 'Claude')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/flows',
+      payload: {
+        name: 'Broken flow',
+        goal: 'Invalid deps',
+        policy: 'serial',
+        steps: [{ id: 'step-1', role: 'architect', agentId, dependsOn: ['missing-step'] }],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('rejects a flow with dependency cycle', async () => {
+    const app = buildServer({ db })
+    const agentId = await registerAgent(app, 'Claude')
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/flows',
+      payload: {
+        name: 'Cyclic flow',
+        goal: 'Invalid dag',
+        policy: 'parallel',
+        steps: [
+          { id: 'step-1', role: 'a', agentId, dependsOn: ['step-2'] },
+          { id: 'step-2', role: 'b', agentId, dependsOn: ['step-1'] },
+        ],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
   })
 })

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { FlowPolicySchema } from '@pumice/types'
+import { FlowPolicySchema, FlowStepSchema } from '@pumice/types'
 import { emitEvent } from './events'
 import { createFlow, getFlowById, listFlows, startRun } from '../services/flow-engine'
 
@@ -21,14 +21,25 @@ export async function flowRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid flow policy' })
     }
 
+    const parsedSteps = FlowStepSchema.array().safeParse(body.steps)
+    if (!parsedSteps.success) {
+      return reply.code(400).send({ error: 'Invalid flow steps' })
+    }
+
+    try {
     const flow = createFlow(app.db, {
       name: body.name,
       goal: body.goal,
-      steps: body.steps as never,
+      steps: parsedSteps.data,
       policy: parsedPolicy.data,
     })
 
     return reply.code(201).send({ flow })
+    } catch (error) {
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : 'Invalid flow definition',
+      })
+    }
   })
 
   app.get('/flows', async (_req, reply) => {
@@ -48,14 +59,39 @@ export async function flowRoutes(app: FastifyInstance) {
     const flow = getFlowById(app.db, params.flowId)
     if (!flow) return reply.code(404).send({ error: 'Flow not found' })
 
-    const run = startRun(app.db, params.flowId)
+    const transition = startRun(app.db, params.flowId)
 
     emitEvent({
       type: 'run.started',
       timestamp: new Date().toISOString(),
-      payload: { runId: run.id, flowId: params.flowId },
+      payload: { runId: transition.run.id, flowId: params.flowId },
     })
 
-    return reply.code(201).send({ run })
+    for (const step of transition.startedSteps) {
+      emitEvent({
+        type: 'run.step_started',
+        timestamp: new Date().toISOString(),
+        payload: {
+          runId: transition.run.id,
+          stepId: step.stepId,
+          commandId: step.commandId,
+          attempt: step.attempt,
+        },
+      })
+    }
+
+    if (['completed', 'failed', 'cancelled'].includes(transition.run.status)) {
+      emitEvent({
+        type: 'run.finished',
+        timestamp: new Date().toISOString(),
+        payload: {
+          runId: transition.run.id,
+          flowId: params.flowId,
+          status: transition.run.status,
+        },
+      })
+    }
+
+    return reply.code(201).send({ run: transition.run })
   })
 }

@@ -148,6 +148,7 @@ export function pullQueuedCommands(db: Database.Database, agentId: string): Comm
 export function saveResponse(db: Database.Database, payload: PostResponsePayload) {
   const responseId = randomUUID()
   const timestamp = nowIso()
+  const finalStatus = (payload as PostResponsePayload & { failed?: boolean }).failed === true ? 'failed' : 'completed'
 
   db.prepare(
     `INSERT INTO responses (id, command_id, agent_id, output, artifacts, partial)
@@ -165,7 +166,7 @@ export function saveResponse(db: Database.Database, payload: PostResponsePayload
     `UPDATE command_deliveries
      SET status = ?, completed_at = CASE WHEN ? = 0 THEN ? ELSE completed_at END
      WHERE command_id = ? AND agent_id = ?`
-  ).run(payload.partial ? 'processing' : 'completed', payload.partial ? 1 : 0, timestamp, payload.commandId, payload.agentId)
+  ).run(payload.partial ? 'processing' : finalStatus, payload.partial ? 1 : 0, timestamp, payload.commandId, payload.agentId)
 
   const nextStatus = getAggregateCommandStatus(db, payload.commandId)
   db.prepare(`UPDATE commands SET status = ? WHERE id = ?`).run(nextStatus, payload.commandId)
@@ -189,16 +190,20 @@ function getAggregateCommandStatus(db: Database.Database, commandId: string): Co
     return 'completed'
   }
 
+  if (statuses.every((status) => status === 'failed')) {
+    return 'failed'
+  }
+
+  if (statuses.every((status) => status === 'completed' || status === 'failed') && statuses.some((status) => status === 'failed')) {
+    return 'failed'
+  }
+
   if (statuses.some((status) => status === 'processing')) {
     return 'processing'
   }
 
   if (statuses.some((status) => status === 'delivered')) {
     return 'delivered'
-  }
-
-  if (statuses.every((status) => status === 'failed')) {
-    return 'failed'
   }
 
   return 'queued'

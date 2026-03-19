@@ -23,6 +23,8 @@ export interface PostResponsePayload {
   artifacts?: string[]
   /** true = streaming chunk; false = final response */
   partial: boolean
+  /** Optional explicit failure flag for final responses. */
+  failed?: boolean
 }
 
 // ─── Adapter contract ─────────────────────────────────────────────────────────

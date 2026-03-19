@@ -32,6 +32,7 @@ export async function responseRoutes(app: FastifyInstance) {
         ? body.artifacts.filter((v): v is string => typeof v === 'string')
         : [],
       partial: body.partial,
+      failed: body.failed === true,
     })
 
     emitEvent({
@@ -57,20 +58,62 @@ export async function responseRoutes(app: FastifyInstance) {
           body.error ?? 'agent reported failure'
         )
         if (dagResult) {
+          for (const step of dagResult.startedSteps) {
+            emitEvent({
+              type: 'run.step_started',
+              timestamp: new Date().toISOString(),
+              payload: {
+                runId: dagResult.run.id,
+                stepId: step.stepId,
+                commandId: step.commandId,
+                attempt: step.attempt,
+              },
+            })
+          }
+
           emitEvent({
             type: dagResult.retrying ? 'run.step_retrying' : 'run.step_failed',
             timestamp: new Date().toISOString(),
-            payload: { runId: dagResult.runId, commandId: body.commandId },
+            payload: { runId: dagResult.run.id, commandId: body.commandId },
           })
+
+          if (['completed', 'failed', 'cancelled'].includes(dagResult.run.status)) {
+            emitEvent({
+              type: 'run.finished',
+              timestamp: new Date().toISOString(),
+              payload: { runId: dagResult.run.id, status: dagResult.run.status },
+            })
+          }
         }
       } else {
-        const runId = onCommandCompleted(app.db, body.commandId)
-        if (runId) {
+        const dagResult = onCommandCompleted(app.db, body.commandId)
+        if (dagResult) {
+          for (const step of dagResult.startedSteps) {
+            emitEvent({
+              type: 'run.step_started',
+              timestamp: new Date().toISOString(),
+              payload: {
+                runId: dagResult.run.id,
+                stepId: step.stepId,
+                commandId: step.commandId,
+                attempt: step.attempt,
+              },
+            })
+          }
+
           emitEvent({
             type: 'run.step_completed',
             timestamp: new Date().toISOString(),
-            payload: { runId, commandId: body.commandId },
+            payload: { runId: dagResult.run.id, commandId: body.commandId },
           })
+
+          if (['completed', 'failed', 'cancelled'].includes(dagResult.run.status)) {
+            emitEvent({
+              type: 'run.finished',
+              timestamp: new Date().toISOString(),
+              payload: { runId: dagResult.run.id, status: dagResult.run.status },
+            })
+          }
         }
       }
     }

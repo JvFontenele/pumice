@@ -12,6 +12,13 @@ export function emitEvent(event: PumiceEvent) {
   }
 }
 
+export function subscribeToEvents(subscriber: Subscriber) {
+  subscribers.add(subscriber)
+  return () => {
+    subscribers.delete(subscriber)
+  }
+}
+
 export async function eventsRoutes(app: FastifyInstance) {
   /**
    * GET /events
