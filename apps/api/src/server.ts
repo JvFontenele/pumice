@@ -7,6 +7,7 @@ import { healthRoutes } from './routes/health'
 import { eventsRoutes } from './routes/events'
 import { responseRoutes } from './routes/responses'
 import { runRoutes } from './routes/runs'
+import { contextRoutes } from './routes/context'
 
 export interface ServerOptions {
   db: Database.Database
@@ -26,6 +27,7 @@ export function buildServer(opts: ServerOptions) {
   app.register(responseRoutes)
   app.register(flowRoutes)
   app.register(runRoutes)
+  app.register(contextRoutes)
 
   return app
 }
