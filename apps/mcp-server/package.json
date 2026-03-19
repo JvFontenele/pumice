@@ -1,0 +1,22 @@
+{
+  "name": "@pumice/mcp-server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pumice-mcp": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "@pumice/types": "*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.0"
+  }
+}
