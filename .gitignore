@@ -1,6 +1,9 @@
 node_modules/
 dist/
+ui-dist/
 .env
+src-tauri/target/
+src-tauri/target-check/
 
 workspace/tasks/*.md
 workspace/outputs/*.md

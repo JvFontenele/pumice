@@ -13,13 +13,18 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
 
     const result = await runClaude(task.instructions);
     return {
-      agent: "claude",
+      agent: config.claude.provider === "ollama" ? "ollama" : "claude",
       role: task.role,
       taskId: task.id,
       success: result.success,
       output: result.success
         ? result.stdout
-        : formatAgentError("claude", config.claudeCommand, result.stderr)
+        : formatAgentError(
+            "claude",
+            config.claude.command,
+            config.claude.provider,
+            result.stderr
+          )
     };
   }
 
@@ -30,13 +35,18 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
 
     const result = await runCodex(task.instructions);
     return {
-      agent: "codex",
+      agent: config.codex.provider === "ollama" ? "ollama" : "codex",
       role: task.role,
       taskId: task.id,
       success: result.success,
       output: result.success
         ? result.stdout
-        : formatAgentError("codex", config.codexCommand, result.stderr)
+        : formatAgentError(
+            "codex",
+            config.codex.command,
+            config.codex.provider,
+            result.stderr
+          )
     };
   }
 
@@ -46,13 +56,20 @@ export async function dispatchTask(task: SubTask): Promise<AgentResult> {
 
   const result = await runGemini(task.instructions);
   return {
-    agent: "gemini",
+    agent: config.gemini.provider === "ollama" ? "ollama" : "gemini",
     role: task.role,
     taskId: task.id,
     success: result.success,
     output: result.success
       ? result.stdout
-      : formatAgentError("gemini", config.geminiCommand, result.stderr)
+      : formatAgentError(
+          "gemini",
+          config.gemini.provider === "ollama"
+            ? config.ollamaCommand
+            : config.gemini.command,
+          config.gemini.provider,
+          result.stderr
+        )
   };
 }
 
@@ -66,9 +83,14 @@ function buildMockResult(agent: AgentResult["agent"], task: SubTask): AgentResul
   };
 }
 
-function formatAgentError(agent: string, command: string, stderr: string) {
+function formatAgentError(
+  agent: string,
+  command: string,
+  provider: string,
+  stderr: string
+) {
   return [
-    `Agent "${agent}" failed while running command "${command}".`,
+    `Agent "${agent}" failed while running command "${command}" with provider "${provider}".`,
     "",
     stderr.trim() || "No stderr output was returned.",
     "",

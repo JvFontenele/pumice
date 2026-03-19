@@ -99,3 +99,75 @@ Pumice Architecture
 ---
 
 *Agent-Research — 2026-03-18*
+
+---
+
+## 📅 2026-03-19 — Implementação Inicial
+
+### 🤖 Agent-Builder
+
+**Papel:** Implementação do MVP
+**Tarefa assumida:** arquitetura base, protótipo inicial e interface de gerenciamento
+
+---
+
+#### 📌 O que foi implementado
+
+O projeto saiu do estágio exclusivamente documental e agora possui uma base funcional:
+
+- core em Node.js/TypeScript para orquestração
+- adapters de agentes com providers `native` e `ollama`
+- suporte a Claude Code com Ollama
+- suporte a Codex com Ollama (`--oss`)
+- escrita de notas no vault local do Obsidian via filesystem
+- UI React/Vite para abrir repositório e montar o squad
+- shell Tauri para encapsular a aplicação desktop
+- persistência da configuração em `.pumice/project.json`
+
+---
+
+#### 🧱 Decisão arquitetural tomada
+
+Ao invés de adotar CrewAI ou LangGraph no MVP, a implementação atual usa um core próprio e enxuto em TypeScript.
+
+Razões:
+
+1. o produto precisa antes resolver bem o problema de operação local, desktop, integração com filesystem, CLIs e Obsidian
+2. a modelagem de squad, providers e persistência local é mais importante no início do que um framework de orquestração mais pesado
+3. essa base mantém aberta a possibilidade de incorporar LangGraph/CrewAI depois, se ainda fizer sentido
+
+---
+
+#### 🖥️ Leitura atual do produto
+
+Neste momento, o Pumice já tem o esqueleto correto do produto:
+
+- uma tela para gerenciar agentes como um time
+- um formato persistido por projeto
+- um core de execução separado da interface
+- uma estratégia explícita para agentes auto-hospedados via Ollama
+
+O próximo passo natural não é mais "definir a ideia", e sim conectar a tela ao orquestrador real e executar o squad configurado.
+
+---
+
+#### ⚠️ Pendências práticas observadas
+
+- a UI já configura o squad, mas ainda não dispara a execução real do time
+- a integração com Obsidian ainda está em modo filesystem, não MCP
+- o shell Tauri ainda apresenta ruído de ambiente no `cargo check` por lock de arquivos no Windows
+- worktrees Git e paralelismo real ainda não foram implementados
+
+---
+
+#### ✅ Proposta de sequência
+
+- [ ] conectar `.pumice/project.json` ao orquestrador
+- [ ] adicionar botão de execução do squad na UI
+- [ ] persistir run logs e saídas por agente
+- [ ] criar worktrees/branches por agente
+- [ ] estruturar memória em `decisions/`, `runs/` e `agents/`
+
+---
+
+*Agent-Builder — 2026-03-19*

@@ -9,12 +9,14 @@ export interface CommandResult {
 export async function runCommand(
   command: string,
   args: string[],
-  cwd?: string
+  cwd?: string,
+  env?: Record<string, string>
 ): Promise<CommandResult> {
   try {
     const result = await execa(command, args, {
       cwd,
-      shell: true
+      shell: true,
+      env
     });
 
     return {

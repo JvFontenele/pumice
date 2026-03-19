@@ -1,4 +1,6 @@
-export type AgentName = "claude" | "codex" | "gemini" | "obsidian";
+export type AgentName = "claude" | "codex" | "gemini" | "ollama" | "obsidian";
+
+export type AgentProvider = "native" | "ollama";
 
 export type TaskRole =
   | "architect"

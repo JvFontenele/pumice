@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pumice",
+  "version": "0.1.0",
+  "identifier": "com.pumice.app",
+  "build": {
+    "beforeDevCommand": "npm run app:dev",
+    "beforeBuildCommand": "npm run app:build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../ui-dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Pumice",
+        "width": 1480,
+        "height": 940,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
